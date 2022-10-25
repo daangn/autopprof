@@ -12,7 +12,7 @@ import (
 )
 
 func main() {
-	err := autopprof.Start(autopprof.Option{
+	err := autopprof.Start(&autopprof.Option{
 		MemThreshold: 0.5,
 		Reporter: report.NewSlackReporter(
 			&report.SlackReporterOption{
