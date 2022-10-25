@@ -4,7 +4,7 @@
 package autopprof
 
 // Start does not do anything on unsupported platforms.
-func Start(opt *Option) error {
+func Start(opt Option) error {
 	return ErrUnsupportedPlatform
 }
 
