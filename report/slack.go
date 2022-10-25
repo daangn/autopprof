@@ -51,12 +51,14 @@ func (s *SlackReporter) ReportHeapProfile(
 		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(memCommentFmt, mi.ThresholdPercentage, mi.UsagePercentage)
 	)
-	_, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
+	if _, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
 		Reader:         r,
 		Filename:       filename,
 		Title:          filename,
 		InitialComment: comment,
 		Channels:       []string{s.channel},
-	})
-	return err
+	}); err != nil {
+		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
+	}
+	return nil
 }
