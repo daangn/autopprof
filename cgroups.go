@@ -33,7 +33,10 @@ func newCgroupsV1() *cgroupsV1 {
 }
 
 func (c cgroupsV1) memUsage() (float64, error) {
-	cg, err := cgroups.Load(cgroups.V1, cgroups.StaticPath("/"))
+	var (
+		path    = cgroups.StaticPath(c.staticPath)
+		cg, err = cgroups.Load(cgroups.V1, path)
+	)
 	if err != nil {
 		return 0, err
 	}
