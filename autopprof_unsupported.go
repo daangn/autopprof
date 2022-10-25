@@ -7,3 +7,6 @@ package autopprof
 func Start(opt *Option) error {
 	return ErrUnsupportedPlatform
 }
+
+// Stop does not do anything on unsupported platforms.
+func Stop() {}
