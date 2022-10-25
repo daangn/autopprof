@@ -5,16 +5,8 @@ before:
     - go mod tidy
     - gofmt -w .
 
-builds:
-  - id: build
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - darwin
-      - linux
-    goarch:
-      - amd64
-      - arm64
+build:
+  skip: true
 
 archives:
   - id: archive
