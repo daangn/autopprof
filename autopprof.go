@@ -20,15 +20,15 @@ const (
 type autoPprof struct {
 	queryer queryer
 
+	// scanInterval is the interval to scan the resource usages.
+	// Default: 5s.
+	scanInterval time.Duration
+
 	// memThreshold is the memory usage threshold to trigger profile.
 	// If the memory usage is over the threshold, the autopprof will
 	//  report the heap profile.
 	// Default: 0.75. (mean 75%)
 	memThreshold float64
-
-	// scanInterval is the interval to scan the resource usages.
-	// Default: 5s.
-	scanInterval time.Duration
 
 	// minConsecutiveOverThreshold is the minimum consecutive
 	// number of over a threshold for reporting profile again.
@@ -38,7 +38,7 @@ type autoPprof struct {
 	// reporter is the reporter to send the profiling report.
 	reporter report.Reporter
 
-	// stopC is the signal channel to stop the autopprof process.
+	// stopC is the signal channel to stop the watch processes.
 	stopC chan struct{}
 }
 
