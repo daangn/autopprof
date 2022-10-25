@@ -7,8 +7,8 @@ Once you start the autopprof, the autopprof process will periodically check the 
 memory utilization of the Go
 applications. If the resource utilization crosses the specified threshold for each type of
 resource,
-it will automatically profile the application (heap or cpu) and report the profiling
-results to the specific reporter (e.g. Slack).
+the autopprof will automatically profile the application (heap or cpu) and report the
+profiling report to the specific reporter (e.g. Slack).
 
 ![profiling example](images/profiling_example.png)
 
