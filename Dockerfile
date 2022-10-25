@@ -1,4 +1,4 @@
-# Build feature store
+# Build autopprof.
 FROM golang:1.19-buster
 WORKDIR /build
 
