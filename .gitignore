@@ -1,0 +1,9 @@
+# editor.
+.idea/
+.vscode/
+
+# binary.
+example
+
+# trash.
+.DS_Store

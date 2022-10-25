@@ -1,0 +1,31 @@
+name: Run tests
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os-version: [ 18.04, 20.04, 22.04 ]
+        go-version: [ 1.16, 1.17, 1.18, 1.19 ]
+    runs-on: ubuntu-${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v1
+        # Ubuntu supported by GitHub Actions support only Linux kernel >= 5.4.
+        # So it couldn't cover the testcases for cgroups v1. Need self-hosted?
+      - name: check linux kernel version
+        run: uname -a
+      - name: Pull golang image
+        run: docker pull golang:${{ matrix.go-version }}
+      - name: Run all tests
+        run: docker run --rm -v=$(pwd):/app -w=/app -m=1000m golang:${{ matrix.go-version }} go test -v -p 1 ./...
