@@ -13,9 +13,6 @@ results to the specific reporter (e.g. Slack).
 ![profiling example](images/profiling_example.png)
 
 > Currently, only Memory profiling is supported. We'll add CPU profiling support soon.
->
-> And currently, only Slack reporter is supported. If you want to use other reporters,
-> please send a pull request.
 
 ## Installation
 
@@ -41,15 +38,14 @@ import (
 
 func main() {
 	err := autopprof.Start(autopprof.Option{
-		App:          "YOUR_APP_NAME",
-		MemThreshold: 0.8, // Default: 0.75.
-		Reporter: report.ReporterOption{
-			Type: report.SLACK,
-			SlackReporterOption: &report.SlackReporterOption{
+		MemThreshold: 0.5,
+		Reporter: report.NewSlackReporter(
+			&report.SlackReporterOption{
+				App:     "YOUR_APP_NAME",
 				Token:   "YOUR_TOKEN_HERE",
 				Channel: "#REPORT_CHANNEL",
 			},
-		},
+		),
 	})
 	if errors.Is(err, autopprof.ErrUnsupportedPlatform) {
 		// You can just skip the autopprof.

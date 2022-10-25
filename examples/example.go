@@ -12,17 +12,15 @@ import (
 )
 
 func main() {
-
 	err := autopprof.Start(autopprof.Option{
-		App:          "YOUR_APP_NAME",
 		MemThreshold: 0.5,
-		Reporter: report.ReporterOption{
-			Type: report.SLACK,
-			SlackReporterOption: &report.SlackReporterOption{
+		Reporter: report.NewSlackReporter(
+			&report.SlackReporterOption{
+				App:     "YOUR_APP_NAME",
 				Token:   "YOUR_TOKEN_HERE",
 				Channel: "#REPORT_CHANNEL",
 			},
-		},
+		),
 	})
 	if errors.Is(err, autopprof.ErrUnsupportedPlatform) {
 		// You can just skip the autopprof.

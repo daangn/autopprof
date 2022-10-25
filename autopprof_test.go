@@ -24,7 +24,6 @@ func TestStart(t *testing.T) {
 		{
 			name: "invalid MemThreshold value 1",
 			opt: Option{
-				App:          "app",
 				MemThreshold: -0.5,
 			},
 			want: ErrInvalidMemThreshold,
@@ -32,7 +31,6 @@ func TestStart(t *testing.T) {
 		{
 			name: "invalid MemThreshold value 2",
 			opt: Option{
-				App:          "app",
 				MemThreshold: 2.5,
 			},
 			want: ErrInvalidMemThreshold,
@@ -40,29 +38,27 @@ func TestStart(t *testing.T) {
 		{
 			name: "valid option 1",
 			opt: Option{
-				App: "app",
-				Reporter: report.ReporterOption{
-					Type: report.SLACK,
-					SlackReporterOption: &report.SlackReporterOption{
+				Reporter: report.NewSlackReporter(
+					&report.SlackReporterOption{
+						App:     "appname",
 						Token:   "token",
 						Channel: "channel",
 					},
-				},
+				),
 			},
 			want: nil,
 		},
 		{
 			name: "valid option 2",
 			opt: Option{
-				App:          "app",
 				MemThreshold: 0.5,
-				Reporter: report.ReporterOption{
-					Type: report.SLACK,
-					SlackReporterOption: &report.SlackReporterOption{
+				Reporter: report.NewSlackReporter(
+					&report.SlackReporterOption{
+						App:     "appname",
 						Token:   "token",
 						Channel: "channel",
 					},
-				},
+				),
 			},
 			want: nil,
 		},
@@ -97,15 +93,14 @@ func TestStop(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.started {
 				_ = Start(Option{
-					App:          "app",
 					MemThreshold: 0.5,
-					Reporter: report.ReporterOption{
-						Type: report.SLACK,
-						SlackReporterOption: &report.SlackReporterOption{
+					Reporter: report.NewSlackReporter(
+						&report.SlackReporterOption{
+							App:     "appname",
 							Token:   "token",
 							Channel: "channel",
 						},
-					},
+					),
 				})
 			}
 			Stop() // Expect no panic.
@@ -120,9 +115,9 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportMem(gomock.Any(), gomock.Any()).
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader) error {
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
 				reported = true
 				return nil
 			},
@@ -159,10 +154,10 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportMem(gomock.Any(), gomock.Any()).
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader) error {
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
 				reportCnt++
 				return nil
 			},

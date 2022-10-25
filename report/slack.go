@@ -10,7 +10,15 @@ import (
 	"github.com/slack-go/slack"
 )
 
-type slackReporter struct {
+const (
+	reportTimeLayout = "2006-01-02T15:04:05.MST"
+
+	memCommentFmt = "mem_threshold: %.2f (%%), mem_usage: %.2f (%%)"
+)
+
+// SlackReporter is the reporter to send the profiling report to the
+// specific Slack channel.
+type SlackReporter struct {
 	app     string
 	channel string
 
@@ -19,37 +27,35 @@ type slackReporter struct {
 
 // SlackReporterOption is the option for the Slack reporter.
 type SlackReporterOption struct {
+	App     string
 	Token   string
 	Channel string
 }
 
-func newSlackReporter(app string, opt *SlackReporterOption) *slackReporter {
-	return &slackReporter{
-		app:     app,
+// NewSlackReporter returns the new SlackReporter.
+func NewSlackReporter(opt *SlackReporterOption) *SlackReporter {
+	return &SlackReporter{
+		app:     opt.App,
 		channel: opt.Channel,
 		client:  slack.New(opt.Token),
 	}
 }
 
-// ReportMem sends the heap profile report to the Slack.
-func (s *slackReporter) ReportMem(ctx context.Context, r io.Reader) error {
-	hostname, _ := os.Hostname() // Ignore the error intentionally.
+// ReportHeapProfile sends the heap profile report to the Slack.
+func (s *SlackReporter) ReportHeapProfile(
+	ctx context.Context, r io.Reader, mi MemInfo,
+) error {
+	hostname, _ := os.Hostname() // Don't care about this error.
 	var (
 		now      = time.Now().Format(reportTimeLayout)
-		filename = fmt.Sprintf(heapProfileFilenameFmt, s.app, hostname, now)
+		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
+		comment  = fmt.Sprintf(memCommentFmt, mi.ThresholdPercentage, mi.UsagePercentage)
 	)
-
-	// There must be context keys for the memory threshold and the usage.
-	var (
-		memThreshold, _ = ctx.Value(MemThresholdCtxKey).(float64)
-		memUsage, _     = ctx.Value(MemUsageCtxKey).(float64)
-	)
-
 	_, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
 		Reader:         r,
 		Filename:       filename,
 		Title:          filename,
-		InitialComment: fmt.Sprintf(memCommentFmt, memThreshold, memUsage),
+		InitialComment: comment,
 		Channels:       []string{s.channel},
 	})
 	return err

@@ -64,12 +64,7 @@ func Start(opt Option) error {
 	if opt.MemThreshold != 0 {
 		ap.memThreshold = opt.MemThreshold
 	}
-
-	reporter, err := report.NewReporter(opt.App, opt.Reporter)
-	if err != nil {
-		return err
-	}
-	ap.reporter = reporter
+	ap.reporter = opt.Reporter
 
 	go ap.watch()
 	globalAp = ap
@@ -141,14 +136,12 @@ func (ap *autoPprof) reportHeapProfile(memUsage float64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
 	defer cancel()
 
-	var (
-		memThresholdP = ap.memThreshold * 100
-		memUsageP     = memUsage * 100
-	)
-	ctx = context.WithValue(ctx, report.MemThresholdCtxKey, memThresholdP)
-	ctx = context.WithValue(ctx, report.MemUsageCtxKey, memUsageP)
-
-	if err := ap.reporter.ReportMem(ctx, bytes.NewReader(b)); err != nil {
+	mi := report.MemInfo{
+		ThresholdPercentage: ap.memThreshold * 100,
+		UsagePercentage:     memUsage * 100,
+	}
+	bReader := bytes.NewReader(b)
+	if err := ap.reporter.ReportHeapProfile(ctx, bReader, mi); err != nil {
 		return err
 	}
 	return nil

@@ -35,16 +35,16 @@ func (m *MockReporter) EXPECT() *MockReporterMockRecorder {
 	return m.recorder
 }
 
-// ReportMem mocks base method.
-func (m *MockReporter) ReportMem(ctx context.Context, r io.Reader) error {
+// ReportHeapProfile mocks base method.
+func (m *MockReporter) ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReportMem", ctx, r)
+	ret := m.ctrl.Call(m, "ReportHeapProfile", ctx, r, mi)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// ReportMem indicates an expected call of ReportMem.
-func (mr *MockReporterMockRecorder) ReportMem(ctx, r interface{}) *gomock.Call {
+// ReportHeapProfile indicates an expected call of ReportHeapProfile.
+func (mr *MockReporterMockRecorder) ReportHeapProfile(ctx, r, mi interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportMem", reflect.TypeOf((*MockReporter)(nil).ReportMem), ctx, r)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportHeapProfile", reflect.TypeOf((*MockReporter)(nil).ReportHeapProfile), ctx, r, mi)
 }
