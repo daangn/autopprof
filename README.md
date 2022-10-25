@@ -5,7 +5,7 @@ threshold levels.
 
 Once you start the autopprof, the autopprof process will periodically check the CPU and
 memory utilization of the Go
-applications. If the utilization crosses the specified threshold levels for each type of
+applications. If the resource utilization crosses the specified threshold for each type of
 resource,
 it will automatically profile the application (heap or cpu) and report the profiling
 results to the specific reporter (e.g. Slack).
@@ -22,7 +22,7 @@ go get -u github.com/daangn/autopprof
 
 ## Usage
 
-> If your application is running on non-linux system, you should check the
+> If your application is running on non-linux systems, you should check the
 > ErrUnsupportedPlatform error returned from `autopprof.Start()` and handle it properly.
 
 ```go
