@@ -26,10 +26,10 @@ func TestCgroupsV1_memUsage(t *testing.T) {
 	}
 	usage, err := newCgroupsV1().memUsage()
 	if err != nil {
-		t.Errorf("memUsageV1() = %v, want nil", err)
+		t.Errorf("memUsage() = %v, want nil", err)
 	}
 	if usage < 0 || usage > 1 {
-		t.Errorf("memUsageV1() = %f, want between 0 and 1", usage)
+		t.Errorf("memUsage() = %f, want between 0 and 1", usage)
 	}
 }
 
@@ -40,9 +40,9 @@ func TestCgroupsV2_memUsage(t *testing.T) {
 	}
 	usage, err := newCgroupsV2().memUsage()
 	if err != nil {
-		t.Errorf("memUsageV2() = %v, want nil", err)
+		t.Errorf("memUsage() = %v, want nil", err)
 	}
 	if usage < 0 || usage > 1 {
-		t.Errorf("memUsageV2() = %f, want between 0 and 1", usage)
+		t.Errorf("memUsage() = %f, want between 0 and 1", usage)
 	}
 }
