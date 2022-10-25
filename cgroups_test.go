@@ -9,22 +9,22 @@ import (
 	"github.com/containerd/cgroups"
 )
 
-func TestMemUsage(t *testing.T) {
+func TestNewQueryer(t *testing.T) {
 	mode := cgroups.Mode()
-	_, err := memUsage()
+	_, err := newQueryer()
 	if mode == cgroups.Unavailable && err == nil {
-		t.Errorf("memUsage() = nil, want error")
+		t.Errorf("newQueryer() = nil, want error")
 	} else if err != nil {
-		t.Errorf("memUsage() = %v, want nil", err)
+		t.Errorf("newQueryer() = %v, want nil", err)
 	}
 }
 
-func TestMemUsageV1(t *testing.T) {
+func TestCgroupsV1_memUsage(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Legacy {
 		t.Skip("cgroup v1 is not available")
 	}
-	usage, err := memUsageV1()
+	usage, err := newCgroupsV1().memUsage()
 	if err != nil {
 		t.Errorf("memUsageV1() = %v, want nil", err)
 	}
@@ -33,12 +33,12 @@ func TestMemUsageV1(t *testing.T) {
 	}
 }
 
-func TestMemUsageV2(t *testing.T) {
+func TestCgroupsV2_memUsage(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Hybrid && mode != cgroups.Unified {
 		t.Skip("cgroup v2 is not available")
 	}
-	usage, err := memUsageV2()
+	usage, err := newCgroupsV2().memUsage()
 	if err != nil {
 		t.Errorf("memUsageV2() = %v, want nil", err)
 	}

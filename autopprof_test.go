@@ -123,7 +123,9 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 			},
 		)
 
+	qryer, _ := newQueryer()
 	ap := &autoPprof{
+		queryer:      qryer,
 		memThreshold: 0.2, // 20%.
 		scanInterval: 1 * time.Second,
 		stopC:        make(chan struct{}),
@@ -163,7 +165,9 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 			},
 		)
 
+	qryer, _ := newQueryer()
 	ap := &autoPprof{
+		queryer:                     qryer,
 		memThreshold:                0.2, // 20%.
 		scanInterval:                1 * time.Second,
 		minConsecutiveOverThreshold: 3,

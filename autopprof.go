@@ -18,6 +18,8 @@ const (
 )
 
 type autoPprof struct {
+	queryer queryer
+
 	// memThreshold is the memory usage threshold to trigger profile.
 	// If the memory usage is over the threshold, the autopprof will
 	//  report the heap profile.
@@ -45,26 +47,25 @@ var globalAp *autoPprof
 
 // Start configures and runs the autopprof process.
 func Start(opt Option) error {
-	// Test if cgroups is available.
-	if _, err := memUsage(); err != nil {
+	qryer, err := newQueryer()
+	if err != nil {
 		return err
 	}
-
-	ap := &autoPprof{
-		memThreshold:                defaultMemThreshold,
-		scanInterval:                defaultScanInterval,
-		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
-		stopC:                       make(chan struct{}),
-	}
-
 	if err := opt.validate(); err != nil {
 		return err
 	}
 
+	ap := &autoPprof{
+		queryer:                     qryer,
+		memThreshold:                defaultMemThreshold,
+		scanInterval:                defaultScanInterval,
+		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
+		reporter:                    opt.Reporter,
+		stopC:                       make(chan struct{}),
+	}
 	if opt.MemThreshold != 0 {
 		ap.memThreshold = opt.MemThreshold
 	}
-	ap.reporter = opt.Reporter
 
 	go ap.watch()
 	globalAp = ap
@@ -93,12 +94,11 @@ func (ap *autoPprof) watchMemUsage(ticker *time.Ticker) {
 	for {
 		select {
 		case <-ticker.C:
-			usage, err := memUsage()
+			usage, err := ap.queryer.memUsage()
 			if err != nil {
 				log.Println(err)
 				return
 			}
-
 			if usage < ap.memThreshold {
 				// Reset the count if the memory usage goes under the threshold.
 				consecutiveOverThresholdCnt = 0
