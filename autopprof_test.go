@@ -94,6 +94,12 @@ func TestStart(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				if globalAp != nil {
+					globalAp.stop()
+					globalAp = nil
+				}
+			})
 			if err := Start(tc.opt); !errors.Is(err, tc.want) {
 				t.Errorf("Start() = %v, want %v", err, tc.want)
 			}
@@ -120,6 +126,9 @@ func TestStop(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				globalAp = nil
+			})
 			if tc.started {
 				_ = Start(Option{
 					MemThreshold: 0.5,
@@ -192,7 +201,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for the goroutine to report.
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 	if !reported {
 		t.Errorf("cpu usage is not reported")
 	}
@@ -248,7 +257,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for the goroutine to report.
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 	if reportCnt != 1 {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
@@ -266,7 +275,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	}
 
 	// Wait for the goroutine to report. It should report. (3 times)
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 	if reportCnt != 2 {
 		t.Errorf("cpu usage is reported %d times, want 2", reportCnt)
 	}
