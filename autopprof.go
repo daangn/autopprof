@@ -34,11 +34,6 @@ type autoPprof struct {
 	// Default: 0.75. (mean 75%)
 	memThreshold float64
 
-	// cpuProfilingDuration is the duration to wait until collect
-	// the enough cpu profiling data.
-	// Default: 10s.
-	cpuProfilingDuration time.Duration
-
 	// minConsecutiveOverThreshold is the minimum consecutive
 	// number of over a threshold for reporting profile again.
 	// Default: 12.
@@ -46,6 +41,9 @@ type autoPprof struct {
 
 	// queryer is used to query the quota and the cgroup stat.
 	queryer queryer
+
+	// profiler is used to profile the cpu and the heap memory.
+	profiler profiler
 
 	// reporter is the reporter to send the profiling reports.
 	reporter report.Reporter
@@ -71,13 +69,14 @@ func Start(opt Option) error {
 		return err
 	}
 
+	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
-		queryer:                     qryer,
+		scanInterval:                defaultScanInterval,
 		cpuThreshold:                defaultCPUThreshold,
 		memThreshold:                defaultMemThreshold,
-		scanInterval:                defaultScanInterval,
-		cpuProfilingDuration:        defaultCPUProfilingDuration,
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
+		queryer:                     qryer,
+		profiler:                    profr,
 		reporter:                    opt.Reporter,
 		disableCPUProf:              opt.DisableCPUProf,
 		disableMemProf:              opt.DisableMemProf,
@@ -159,7 +158,7 @@ func (ap *autoPprof) watchCPUUsage() {
 }
 
 func (ap *autoPprof) reportCPUProfile(cpuUsage float64) error {
-	b, err := ap.profileCPU()
+	b, err := ap.profiler.profileCPU()
 	if err != nil {
 		return fmt.Errorf("autopprof: failed to profile the cpu: %w", err)
 	}
@@ -224,7 +223,7 @@ func (ap *autoPprof) watchMemUsage() {
 }
 
 func (ap *autoPprof) reportHeapProfile(memUsage float64) error {
-	b, err := ap.profileHeap()
+	b, err := ap.profiler.profileHeap()
 	if err != nil {
 		return fmt.Errorf("autopprof: failed to profile the heap: %w", err)
 	}

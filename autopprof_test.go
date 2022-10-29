@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"runtime"
 	"testing"
 	"time"
 
@@ -147,17 +146,24 @@ func TestStop(t *testing.T) {
 	}
 }
 
-func fib(n int) int64 {
-	if n <= 1 {
-		return int64(n)
-	}
-	return fib(n-1) + fib(n-2)
-}
-
 func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	var reported bool
+	var (
+		profiled bool
+		reported bool
+	)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileCPU().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiled = true
+				return []byte("prof"), nil
+			},
+		)
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
@@ -172,13 +178,13 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
-		queryer:              qryer,
-		disableMemProf:       true,
-		scanInterval:         1 * time.Second,
-		cpuProfilingDuration: 1 * time.Second,
-		cpuThreshold:         0.5, // 50%.
-		stopC:                make(chan struct{}),
-		reporter:             mockReporter,
+		disableMemProf: true,
+		scanInterval:   1 * time.Second,
+		cpuThreshold:   0.5, // 50%.
+		queryer:        qryer,
+		profiler:       mockProfiler,
+		reporter:       mockReporter,
+		stopC:          make(chan struct{}),
 	}
 	_ = qryer.setCPUQuota()
 
@@ -201,12 +207,11 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	// Avoid profiling to be so delayed.
-	for i := 0; i < 15000000; i++ {
-		runtime.Gosched()
+	// Wait for profiling and reporting.
+	time.Sleep(2100 * time.Millisecond)
+	if !profiled {
+		t.Errorf("cpu usage is not profiled")
 	}
-	// Wait for the goroutine to report.
-	time.Sleep(2200 * time.Millisecond)
 	if !reported {
 		t.Errorf("cpu usage is not reported")
 	}
@@ -215,7 +220,21 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	var reportCnt int
+	var (
+		profiledCnt int
+		reportedCnt int
+	)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileCPU().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiledCnt++
+				return []byte("prof"), nil
+			},
+		)
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
@@ -223,21 +242,21 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
-				reportCnt++
+				reportedCnt++
 				return nil
 			},
 		)
 
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
-		queryer:                     qryer,
 		disableMemProf:              true,
 		scanInterval:                1 * time.Second,
-		cpuProfilingDuration:        1 * time.Second,
 		cpuThreshold:                0.5, // 50%.
 		minConsecutiveOverThreshold: 3,
-		stopC:                       make(chan struct{}),
+		queryer:                     qryer,
+		profiler:                    mockProfiler,
 		reporter:                    mockReporter,
+		stopC:                       make(chan struct{}),
 	}
 	_ = qryer.setCPUQuota()
 
@@ -261,51 +280,60 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	// Avoid profiling to be so delayed.
-	for i := 0; i < 15000000; i++ {
-		runtime.Gosched()
+	// Wait for profiling and reporting.
+	time.Sleep(2100 * time.Millisecond)
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	// Wait for the goroutine to report.
-	time.Sleep(2200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
-	}
-
-	// Avoid profiling to be so delayed.
-	for i := 0; i < 15000000; i++ {
-		runtime.Gosched()
-	}
-	// Wait for the goroutine to report. But it should not report.
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
 	}
 
-	// Avoid profiling to be so delayed.
-	for i := 0; i < 15000000; i++ {
-		runtime.Gosched()
+	time.Sleep(1050 * time.Millisecond)
+	// 2nd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	// Wait for the goroutine to report. But it should not report.
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
 	}
 
-	// Avoid profiling to be so delayed.
-	for i := 0; i < 15000000; i++ {
-		runtime.Gosched()
+	time.Sleep(1050 * time.Millisecond)
+	// 3rd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	// Wait for the goroutine to report. It should report. (3 times)
-	time.Sleep(2200 * time.Millisecond)
-	if reportCnt != 2 {
-		t.Errorf("cpu usage is reported %d times, want 2", reportCnt)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 4th time. Now it should be profiled and reported.
+	if profiledCnt != 2 {
+		t.Errorf("cpu usage is profiled %d times, want 2", profiledCnt)
+	}
+	if reportedCnt != 2 {
+		t.Errorf("cpu usage is reported %d times, want 2", reportedCnt)
 	}
 }
 
 func TestAutoPprof_watchMemUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	var reported bool
+	var (
+		profiled bool
+		reported bool
+	)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileHeap().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiled = true
+				return []byte("prof"), nil
+			},
+		)
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
@@ -319,12 +347,13 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
-		queryer:        qryer,
 		disableCPUProf: true,
 		scanInterval:   1 * time.Second,
 		memThreshold:   0.2, // 20%.
-		stopC:          make(chan struct{}),
+		queryer:        qryer,
+		profiler:       mockProfiler,
 		reporter:       mockReporter,
+		stopC:          make(chan struct{}),
 	}
 
 	// Occupy heap memory to make memory usage over 20%.
@@ -337,8 +366,11 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 	go ap.watchMemUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	// Wait for the goroutine to report.
-	time.Sleep(1200 * time.Millisecond)
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if !profiled {
+		t.Errorf("mem usage is not profiled")
+	}
 	if !reported {
 		t.Errorf("mem usage is not reported")
 	}
@@ -347,7 +379,21 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	var reportCnt int
+	var (
+		profiledCnt int
+		reportedCnt int
+	)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileHeap().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiledCnt++
+				return []byte("prof"), nil
+			},
+		)
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
@@ -355,20 +401,21 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 		AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
-				reportCnt++
+				reportedCnt++
 				return nil
 			},
 		)
 
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
-		queryer:                     qryer,
 		disableCPUProf:              true,
 		scanInterval:                1 * time.Second,
 		memThreshold:                0.2, // 20%.
 		minConsecutiveOverThreshold: 3,
-		stopC:                       make(chan struct{}),
+		queryer:                     qryer,
+		profiler:                    mockProfiler,
 		reporter:                    mockReporter,
+		stopC:                       make(chan struct{}),
 	}
 
 	// Occupy heap memory to make memory usage over 20%.
@@ -381,27 +428,46 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	go ap.watchMemUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	// Wait for the goroutine to report.
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("mem usage is reported %d times, want 1", reportCnt)
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
 	}
 
-	// Wait for the goroutine to report. But it should not report.
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("mem usage is reported %d times, want 1", reportCnt)
+	time.Sleep(1050 * time.Millisecond)
+	// 2nd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
 	}
 
-	// Wait for the goroutine to report. But it should not report.
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 1 {
-		t.Errorf("mem usage is reported %d times, want 1", reportCnt)
+	time.Sleep(1050 * time.Millisecond)
+	// 3rd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
 	}
 
-	// Wait for the goroutine to report. It should report. (3 times)
-	time.Sleep(1200 * time.Millisecond)
-	if reportCnt != 2 {
-		t.Errorf("mem usage is reported %d times, want 2", reportCnt)
+	time.Sleep(1050 * time.Millisecond)
+	// 4th time. Now it should be profiled and reported.
+	if profiledCnt != 2 {
+		t.Errorf("mem usage is profiled %d times, want 2", profiledCnt)
 	}
+	if reportedCnt != 2 {
+		t.Errorf("mem usage is reported %d times, want 2", reportedCnt)
+	}
+}
+
+func fib(n int) int64 {
+	if n <= 1 {
+		return int64(n)
+	}
+	return fib(n-1) + fib(n-2)
 }

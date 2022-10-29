@@ -2,14 +2,11 @@ package autopprof
 
 import (
 	"testing"
-	"time"
 )
 
-func TestAutoPprof_ProfileCPU(t *testing.T) {
-	ap := &autoPprof{
-		cpuProfilingDuration: 1 * time.Second,
-	}
-	b, err := ap.profileCPU()
+func TestDefaultProfiler_ProfileCPU(t *testing.T) {
+	p := newDefaultProfiler(defaultCPUProfilingDuration)
+	b, err := p.profileCPU()
 	if err != nil {
 		t.Errorf("profileCPU() = %v, want %v", err, nil)
 		t.FailNow()
@@ -19,9 +16,9 @@ func TestAutoPprof_ProfileCPU(t *testing.T) {
 	}
 }
 
-func TestAutoPprof_ProfileHeap(t *testing.T) {
-	ap := &autoPprof{}
-	b, err := ap.profileHeap()
+func TestDefaultProfiler_ProfileHeap(t *testing.T) {
+	p := newDefaultProfiler(defaultCPUProfilingDuration)
+	b, err := p.profileHeap()
 	if err != nil {
 		t.Errorf("profileHeap() = %v, want %v", err, nil)
 		t.FailNow()
