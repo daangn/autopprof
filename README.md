@@ -9,8 +9,9 @@ specified threshold for each type of resource, the autopprof will automatically 
 the application (heap or cpu) and report the profiling report to the specific reporter (
 e.g. Slack).
 
-![profiling example cpu](images/profiling_example_cpu.png)
-![profiling example mem](images/profiling_example_mem.png)
+| CPU Profiling                                              | Memory Profiling                                           |
+|------------------------------------------------------------|------------------------------------------------------------|
+| ![profiling example cpu](images/profiling_example_cpu.png) | ![profiling example mem](images/profiling_example_mem.png) |
 
 ## Installation
 
