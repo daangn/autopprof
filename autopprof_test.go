@@ -322,7 +322,7 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
-	for i := 0; i < 20000000; i++ {
+	for i := 0; i < 10000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
@@ -366,7 +366,7 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
-	for i := 0; i < 20000000; i++ {
+	for i := 0; i < 10000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
