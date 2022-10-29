@@ -22,6 +22,28 @@ func TestStart(t *testing.T) {
 		want error
 	}{
 		{
+			name: "disable flags are all true",
+			opt: Option{
+				DisableCPUProf: true,
+				DisableMemProf: true,
+			},
+			want: ErrDisableAllProfiling,
+		},
+		{
+			name: "invalid CPUThreshold value 1",
+			opt: Option{
+				CPUThreshold: -0.5,
+			},
+			want: ErrInvalidCPUThreshold,
+		},
+		{
+			name: "invalid CPUThreshold value 2",
+			opt: Option{
+				CPUThreshold: 2.5,
+			},
+			want: ErrInvalidCPUThreshold,
+		},
+		{
 			name: "invalid MemThreshold value 1",
 			opt: Option{
 				MemThreshold: -0.5,
@@ -34,6 +56,13 @@ func TestStart(t *testing.T) {
 				MemThreshold: 2.5,
 			},
 			want: ErrInvalidMemThreshold,
+		},
+		{
+			name: "when given reporter is nil",
+			opt: Option{
+				Reporter: nil,
+			},
+			want: ErrNilReporter,
 		},
 		{
 			name: "valid option 1",
@@ -108,6 +137,141 @@ func TestStop(t *testing.T) {
 	}
 }
 
+func fib(n int) int64 {
+	if n <= 1 {
+		return int64(n)
+	}
+	return fib(n-1) + fib(n-2)
+}
+
+func TestAutoPprof_watchCPUUsage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var reported bool
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+				reported = true
+				return nil
+			},
+		)
+
+	qryer, _ := newQueryer()
+	ap := &autoPprof{
+		queryer:              qryer,
+		disableMemProf:       true,
+		scanInterval:         1 * time.Second,
+		cpuProfilingDuration: 1 * time.Second,
+		cpuThreshold:         0.5, // 50%.
+		stopC:                make(chan struct{}),
+		reporter:             mockReporter,
+	}
+	_ = qryer.setCPUQuota()
+
+	// To stop the cpu-bound loop after the test.
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+
+	// Run cpu-bound loop to make cpu usage over 50%.
+	// The cpu quota of test docker container is 1.5.
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				fib(12)
+			}
+		}
+	}()
+	go ap.watchCPUUsage()
+	t.Cleanup(func() { ap.stop() })
+
+	// Wait for the goroutine to report.
+	time.Sleep(4 * time.Second)
+	if !reported {
+		t.Errorf("cpu usage is not reported")
+	}
+}
+
+func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var reportCnt int
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+				reportCnt++
+				return nil
+			},
+		)
+
+	qryer, _ := newQueryer()
+	ap := &autoPprof{
+		queryer:                     qryer,
+		disableMemProf:              true,
+		scanInterval:                1 * time.Second,
+		cpuProfilingDuration:        1 * time.Second,
+		cpuThreshold:                0.5, // 50%.
+		minConsecutiveOverThreshold: 3,
+		stopC:                       make(chan struct{}),
+		reporter:                    mockReporter,
+	}
+	_ = qryer.setCPUQuota()
+
+	// To stop the cpu-bound loop after the test.
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+
+	// Run cpu-bound loop to make cpu usage over 50%.
+	// The cpu quota of test docker container is 1.5.
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				fib(12)
+			}
+		}
+	}()
+
+	go ap.watchCPUUsage()
+	t.Cleanup(func() { ap.stop() })
+
+	// Wait for the goroutine to report.
+	time.Sleep(4 * time.Second)
+	if reportCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
+	}
+
+	// Wait for the goroutine to report. But it should not report.
+	time.Sleep(1200 * time.Millisecond)
+	if reportCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
+	}
+
+	// Wait for the goroutine to report. But it should not report.
+	time.Sleep(1200 * time.Millisecond)
+	if reportCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
+	}
+
+	// Wait for the goroutine to report. It should report. (3 times)
+	time.Sleep(4 * time.Second)
+	if reportCnt != 2 {
+		t.Errorf("cpu usage is reported %d times, want 2", reportCnt)
+	}
+}
+
 func TestAutoPprof_watchMemUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -125,22 +289,23 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
-		queryer:      qryer,
-		memThreshold: 0.2, // 20%.
-		scanInterval: 1 * time.Second,
-		stopC:        make(chan struct{}),
-		reporter:     mockReporter,
+		queryer:        qryer,
+		disableCPUProf: true,
+		scanInterval:   1 * time.Second,
+		memThreshold:   0.2, // 20%.
+		stopC:          make(chan struct{}),
+		reporter:       mockReporter,
 	}
 
+	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
 	for i := 0; i < 10000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
-	go ap.watchMemUsage(ticker)
-	defer ap.stop()
+	go ap.watchMemUsage()
+	t.Cleanup(func() { ap.stop() })
 
 	// Wait for the goroutine to report.
 	time.Sleep(1200 * time.Millisecond)
@@ -168,22 +333,23 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		queryer:                     qryer,
-		memThreshold:                0.2, // 20%.
+		disableCPUProf:              true,
 		scanInterval:                1 * time.Second,
+		memThreshold:                0.2, // 20%.
 		minConsecutiveOverThreshold: 3,
 		stopC:                       make(chan struct{}),
 		reporter:                    mockReporter,
 	}
 
+	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
 	for i := 0; i < 10000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
-	go ap.watchMemUsage(ticker)
-	defer ap.stop()
+	go ap.watchMemUsage()
+	t.Cleanup(func() { ap.stop() })
 
 	// Wait for the goroutine to report.
 	time.Sleep(1200 * time.Millisecond)

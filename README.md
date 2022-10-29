@@ -4,15 +4,13 @@ Automatically profile the Go applications when CPU or memory utilization crosses
 threshold levels.
 
 Once you start the autopprof, the autopprof process will periodically check the CPU and
-memory utilization of the Go
-applications. If the resource utilization crosses the specified threshold for each type of
-resource,
-the autopprof will automatically profile the application (heap or cpu) and report the
-profiling report to the specific reporter (e.g. Slack).
+memory utilization of the Go applications. If the resource utilization crosses the
+specified threshold for each type of resource, the autopprof will automatically profile
+the application (heap or cpu) and report the profiling report to the specific reporter (
+e.g. Slack).
 
-![profiling example](images/profiling_example.png)
-
-> Currently, only Memory profiling is supported. We'll add CPU profiling support soon.
+![profiling example cpu](images/profiling_example_cpu.png)
+![profiling example mem](images/profiling_example_mem.png)
 
 ## Installation
 
@@ -38,7 +36,8 @@ import (
 
 func main() {
 	err := autopprof.Start(autopprof.Option{
-		MemThreshold: 0.5,
+		CPUThreshold: 0.8, // Default: 0.75.
+		MemThreshold: 0.8, // Default: 0.75.
 		Reporter: report.NewSlackReporter(
 			&report.SlackReporterOption{
 				App:     "YOUR_APP_NAME",
@@ -58,6 +57,8 @@ func main() {
 	// Your code here.
 }
 ```
+
+> You can create the custom reporter by implementing the `report.Reporter` interface.
 
 ## License
 
