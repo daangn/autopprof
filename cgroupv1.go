@@ -16,21 +16,24 @@ import (
 
 const (
 	cgroupV1MountPoint    = "/sys/fs/cgroup"
+	cgroupV1CPUSubsystem  = "cpu"
 	cgroupV1CPUQuotaFile  = "cpu.cfs_quota_us"
 	cgroupV1CPUPeriodFile = "cpu.cfs_period_us"
 )
 
 type cgroupV1 struct {
-	staticPath string
-	mountPoint string
+	staticPath   string
+	mountPoint   string
+	cpuSubsystem string
 
 	cpuQuota float64
 }
 
 func newCgroupsV1() *cgroupV1 {
 	return &cgroupV1{
-		staticPath: "/",
-		mountPoint: cgroupV1MountPoint,
+		staticPath:   "/",
+		mountPoint:   cgroupV1MountPoint,
+		cpuSubsystem: cgroupV1CPUSubsystem,
 	}
 }
 
@@ -95,7 +98,7 @@ func (c *cgroupV1) memUsage() (float64, error) {
 
 func (c *cgroupV1) parseCPU(filename string) (int, error) {
 	f, err := os.Open(
-		path.Join(c.mountPoint, filename),
+		path.Join(c.mountPoint, c.cpuSubsystem, filename),
 	)
 	if err != nil {
 		return 0, err

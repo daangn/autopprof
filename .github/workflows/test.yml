@@ -21,8 +21,6 @@ jobs:
     runs-on: ubuntu-${{ matrix.os-version }}
     steps:
       - uses: actions/checkout@v1
-        # Ubuntu supported by GitHub Actions support only Linux kernel >= 5.4.
-        # So it couldn't cover the testcases for cgroups v1. Need self-hosted?
       - name: check linux kernel version
         run: uname -a
       - name: Pull golang image
