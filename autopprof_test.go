@@ -206,7 +206,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond)
 	if !reported {
 		t.Errorf("cpu usage is not reported")
 	}
@@ -266,7 +266,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond)
 	if reportCnt != 1 {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
@@ -288,7 +288,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report. It should report. (3 times)
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(2200 * time.Millisecond)
 	if reportCnt != 2 {
 		t.Errorf("cpu usage is reported %d times, want 2", reportCnt)
 	}
