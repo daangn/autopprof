@@ -193,7 +193,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 			case <-done:
 				return
 			default:
-				fib(12)
+				fib(10)
 			}
 		}
 	}()
@@ -248,7 +248,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 			case <-done:
 				return
 			default:
-				fib(12)
+				fib(10)
 			}
 		}
 	}()
