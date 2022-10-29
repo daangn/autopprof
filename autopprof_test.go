@@ -271,12 +271,20 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
 
+	// Avoid profiling to be so delayed.
+	for i := 0; i < 15000000; i++ {
+		runtime.Gosched()
+	}
 	// Wait for the goroutine to report. But it should not report.
 	time.Sleep(1200 * time.Millisecond)
 	if reportCnt != 1 {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
 
+	// Avoid profiling to be so delayed.
+	for i := 0; i < 15000000; i++ {
+		runtime.Gosched()
+	}
 	// Wait for the goroutine to report. But it should not report.
 	time.Sleep(1200 * time.Millisecond)
 	if reportCnt != 1 {
