@@ -202,7 +202,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 20000000; i++ {
+	for i := 0; i < 15000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
@@ -262,7 +262,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 20000000; i++ {
+	for i := 0; i < 15000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
@@ -284,7 +284,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	}
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 20000000; i++ {
+	for i := 0; i < 15000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report. It should report. (3 times)
