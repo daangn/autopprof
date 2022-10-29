@@ -202,7 +202,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 20000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
@@ -262,7 +262,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 20000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report.
@@ -284,7 +284,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	}
 
 	// Avoid profiling to be so delayed.
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 20000000; i++ {
 		runtime.Gosched()
 	}
 	// Wait for the goroutine to report. It should report. (3 times)
@@ -322,7 +322,7 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 20000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
@@ -366,7 +366,7 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	// Occupy heap memory to make memory usage over 20%.
 	// The memory limit of test docker container is 1GB.
 	m := make(map[int64]string, 10000000)
-	for i := 0; i < 10000000; i++ {
+	for i := 0; i < 20000000; i++ {
 		m[int64(i)] = "eating heap memory"
 	}
 
