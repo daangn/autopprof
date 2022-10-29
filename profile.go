@@ -15,7 +15,7 @@ func (ap *autoPprof) profileCPU() ([]byte, error) {
 	if err := pprof.StartCPUProfile(w); err != nil {
 		return nil, err
 	}
-	time.Sleep(ap.cpuProfilingDuration) // Collect.
+	<-time.After(ap.cpuProfilingDuration) // Sleep.
 	pprof.StopCPUProfile()
 
 	if err := w.Flush(); err != nil {
