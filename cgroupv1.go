@@ -80,7 +80,10 @@ func (c *cgroupV1) cpuUsage() (float64, error) {
 		return 0, err
 	}
 	curr := stat.CPU.Usage.Total
-	return float64(curr - prev), nil
+
+	delta := time.Duration(curr-prev) * time.Microsecond
+	avg := float64(delta) / float64(cpuUsageScanInterval)
+	return avg / c.cpuQuota, nil
 }
 
 func (c *cgroupV1) memUsage() (float64, error) {
