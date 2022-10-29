@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"testing"
 	"time"
 
@@ -200,8 +201,12 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
+	// Avoid profiling to be so delayed.
+	for i := 0; i < 10000000; i++ {
+		runtime.Gosched()
+	}
 	// Wait for the goroutine to report.
-	time.Sleep(5 * time.Second)
+	time.Sleep(2500 * time.Millisecond)
 	if !reported {
 		t.Errorf("cpu usage is not reported")
 	}
@@ -256,8 +261,12 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
+	// Avoid profiling to be so delayed.
+	for i := 0; i < 10000000; i++ {
+		runtime.Gosched()
+	}
 	// Wait for the goroutine to report.
-	time.Sleep(4 * time.Second)
+	time.Sleep(2500 * time.Millisecond)
 	if reportCnt != 1 {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
@@ -274,8 +283,12 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		t.Errorf("cpu usage is reported %d times, want 1", reportCnt)
 	}
 
+	// Avoid profiling to be so delayed.
+	for i := 0; i < 10000000; i++ {
+		runtime.Gosched()
+	}
 	// Wait for the goroutine to report. It should report. (3 times)
-	time.Sleep(4 * time.Second)
+	time.Sleep(2500 * time.Millisecond)
 	if reportCnt != 2 {
 		t.Errorf("cpu usage is reported %d times, want 2", reportCnt)
 	}
