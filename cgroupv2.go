@@ -100,7 +100,7 @@ func (c *cgroupV2) cpuUsage() (float64, error) {
 	}
 	prev := stat.CPU.UsageUsec
 
-	time.Sleep(cpuUsageScanInterval)
+	time.Sleep(cpuUsageSnapshotTime)
 
 	stat, err = c.stat()
 	if err != nil {
@@ -109,7 +109,7 @@ func (c *cgroupV2) cpuUsage() (float64, error) {
 	curr := stat.CPU.UsageUsec
 
 	delta := time.Duration(curr-prev) * time.Microsecond
-	avg := float64(delta) / float64(cpuUsageScanInterval)
+	avg := float64(delta) / float64(cpuUsageSnapshotTime)
 	return avg / c.cpuQuota, nil
 }
 
