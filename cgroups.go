@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	cpuUsageSnapshotTime = time.Second
+	cpuSnapshotDuration = time.Second
 )
 
 type queryer interface {
