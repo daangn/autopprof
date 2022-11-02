@@ -35,6 +35,20 @@ func (m *MockReporter) EXPECT() *MockReporterMockRecorder {
 	return m.recorder
 }
 
+// ReportCPUProfile mocks base method.
+func (m *MockReporter) ReportCPUProfile(ctx context.Context, r io.Reader, ci CPUInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportCPUProfile", ctx, r, ci)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportCPUProfile indicates an expected call of ReportCPUProfile.
+func (mr *MockReporterMockRecorder) ReportCPUProfile(ctx, r, ci interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportCPUProfile", reflect.TypeOf((*MockReporter)(nil).ReportCPUProfile), ctx, r, ci)
+}
+
 // ReportHeapProfile mocks base method.
 func (m *MockReporter) ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error {
 	m.ctrl.T.Helper()

@@ -18,11 +18,15 @@ const (
 )
 
 type autoPprof struct {
-	queryer queryer
-
 	// scanInterval is the interval to scan the resource usages.
 	// Default: 5s.
 	scanInterval time.Duration
+
+	// cpuThreshold is the cpu usage threshold to trigger profile.
+	// If the cpu usage is over the threshold, the autopprof will
+	//  report the cpu profile.
+	// Default: 0.75. (mean 75%)
+	cpuThreshold float64
 
 	// memThreshold is the memory usage threshold to trigger profile.
 	// If the memory usage is over the threshold, the autopprof will
@@ -35,8 +39,18 @@ type autoPprof struct {
 	// Default: 12.
 	minConsecutiveOverThreshold int
 
-	// reporter is the reporter to send the profiling report.
+	// queryer is used to query the quota and the cgroup stat.
+	queryer queryer
+
+	// profiler is used to profile the cpu and the heap memory.
+	profiler profiler
+
+	// reporter is the reporter to send the profiling reports.
 	reporter report.Reporter
+
+	// Flags to disable the profiling.
+	disableCPUProf bool
+	disableMemProf bool
 
 	// stopC is the signal channel to stop the watch processes.
 	stopC chan struct{}
@@ -55,16 +69,29 @@ func Start(opt Option) error {
 		return err
 	}
 
+	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
-		queryer:                     qryer,
-		memThreshold:                defaultMemThreshold,
 		scanInterval:                defaultScanInterval,
+		cpuThreshold:                defaultCPUThreshold,
+		memThreshold:                defaultMemThreshold,
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
+		queryer:                     qryer,
+		profiler:                    profr,
 		reporter:                    opt.Reporter,
+		disableCPUProf:              opt.DisableCPUProf,
+		disableMemProf:              opt.DisableMemProf,
 		stopC:                       make(chan struct{}),
+	}
+	if opt.CPUThreshold != 0 {
+		ap.cpuThreshold = opt.CPUThreshold
 	}
 	if opt.MemThreshold != 0 {
 		ap.memThreshold = opt.MemThreshold
+	}
+	if !ap.disableCPUProf {
+		if err := ap.queryer.setCPUQuota(); err != nil {
+			return err
+		}
 	}
 
 	go ap.watch()
@@ -80,16 +107,84 @@ func Stop() {
 }
 
 func (ap *autoPprof) watch() {
-	ticker := time.NewTicker(ap.scanInterval)
-	defer ticker.Stop()
-
-	go ap.watchMemUsage(ticker)
-	// TODO(mingrammer): watch CPU usage too.
-
+	go ap.watchCPUUsage()
+	go ap.watchMemUsage()
 	<-ap.stopC
 }
 
-func (ap *autoPprof) watchMemUsage(ticker *time.Ticker) {
+func (ap *autoPprof) watchCPUUsage() {
+	if ap.disableCPUProf {
+		return
+	}
+
+	ticker := time.NewTicker(ap.scanInterval)
+	defer ticker.Stop()
+
+	var consecutiveOverThresholdCnt int
+	for {
+		select {
+		case <-ticker.C:
+			usage, err := ap.queryer.cpuUsage()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			if usage < ap.cpuThreshold {
+				// Reset the count if the cpu usage goes under the threshold.
+				consecutiveOverThresholdCnt = 0
+				continue
+			}
+
+			// If cpu utilization remains high for a short period of time, no
+			//  duplicate reports are sent.
+			// This is to prevent the autopprof from sending too many reports.
+			if consecutiveOverThresholdCnt == 0 {
+				if err := ap.reportCPUProfile(usage); err != nil {
+					log.Println(fmt.Errorf(
+						"autopprof: failed to report the cpu profile: %w", err,
+					))
+				}
+			}
+
+			consecutiveOverThresholdCnt++
+			if consecutiveOverThresholdCnt >= ap.minConsecutiveOverThreshold {
+				// Reset the count and ready to report the cpu profile again.
+				consecutiveOverThresholdCnt = 0
+			}
+		case <-ap.stopC:
+			return
+		}
+	}
+}
+
+func (ap *autoPprof) reportCPUProfile(cpuUsage float64) error {
+	b, err := ap.profiler.profileCPU()
+	if err != nil {
+		return fmt.Errorf("autopprof: failed to profile the cpu: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
+	defer cancel()
+
+	ci := report.CPUInfo{
+		ThresholdPercentage: ap.cpuThreshold * 100,
+		UsagePercentage:     cpuUsage * 100,
+	}
+	bReader := bytes.NewReader(b)
+	if err := ap.reporter.ReportCPUProfile(ctx, bReader, ci); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ap *autoPprof) watchMemUsage() {
+	if ap.disableMemProf {
+		return
+	}
+
+	ticker := time.NewTicker(ap.scanInterval)
+	defer ticker.Stop()
+
 	var consecutiveOverThresholdCnt int
 	for {
 		select {
@@ -106,7 +201,7 @@ func (ap *autoPprof) watchMemUsage(ticker *time.Ticker) {
 			}
 
 			// If memory utilization remains high for a short period of time,
-			// no duplicate reports are sent.
+			//  no duplicate reports are sent.
 			// This is to prevent the autopprof from sending too many reports.
 			if consecutiveOverThresholdCnt == 0 {
 				if err := ap.reportHeapProfile(usage); err != nil {
@@ -128,7 +223,7 @@ func (ap *autoPprof) watchMemUsage(ticker *time.Ticker) {
 }
 
 func (ap *autoPprof) reportHeapProfile(memUsage float64) error {
-	b, err := profileHeap()
+	b, err := ap.profiler.profileHeap()
 	if err != nil {
 		return fmt.Errorf("autopprof: failed to profile the heap: %w", err)
 	}

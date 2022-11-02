@@ -18,31 +18,3 @@ func TestNewQueryer(t *testing.T) {
 		t.Errorf("newQueryer() = %v, want nil", err)
 	}
 }
-
-func TestCgroupsV1_memUsage(t *testing.T) {
-	mode := cgroups.Mode()
-	if mode != cgroups.Legacy {
-		t.Skip("cgroup v1 is not available")
-	}
-	usage, err := newCgroupsV1().memUsage()
-	if err != nil {
-		t.Errorf("memUsage() = %v, want nil", err)
-	}
-	if usage < 0 || usage > 1 {
-		t.Errorf("memUsage() = %f, want between 0 and 1", usage)
-	}
-}
-
-func TestCgroupsV2_memUsage(t *testing.T) {
-	mode := cgroups.Mode()
-	if mode != cgroups.Hybrid && mode != cgroups.Unified {
-		t.Skip("cgroup v2 is not available")
-	}
-	usage, err := newCgroupsV2().memUsage()
-	if err != nil {
-		t.Errorf("memUsage() = %v, want nil", err)
-	}
-	if usage < 0 || usage > 1 {
-		t.Errorf("memUsage() = %f, want between 0 and 1", usage)
-	}
-}
