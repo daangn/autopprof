@@ -9,7 +9,7 @@ import (
 const (
 	defaultCPUThreshold                = 0.75
 	defaultMemThreshold                = 0.75
-	defaultScanInterval                = 5 * time.Second
+	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
 	defaultMinConsecutiveOverThreshold = 12 // min 1 minute. (12*5s)
 )
