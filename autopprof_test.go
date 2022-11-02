@@ -471,3 +471,75 @@ func fib(n int) int64 {
 	}
 	return fib(n-1) + fib(n-2)
 }
+
+func BenchmarkLightJob(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		fib(10)
+	}
+}
+
+func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
+	var (
+		qryer, _ = newQueryer()
+		ticker   = time.NewTicker(defaultScanInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_, _ = qryer.cpuUsage()
+		default:
+			fib(10)
+		}
+	}
+}
+
+func BenchmarkLightJobWithWatchMemUsage(b *testing.B) {
+	var (
+		qryer, _ = newQueryer()
+		ticker   = time.NewTicker(defaultScanInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_, _ = qryer.memUsage()
+		default:
+			fib(10)
+		}
+	}
+}
+
+func BenchmarkHeavyJob(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		fib(24)
+	}
+}
+
+func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
+	var (
+		qryer, _ = newQueryer()
+		ticker   = time.NewTicker(defaultScanInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_, _ = qryer.cpuUsage()
+		default:
+			fib(24)
+		}
+	}
+}
+
+func BenchmarkHeavyJobWithWatchMemUsage(b *testing.B) {
+	var (
+		qryer, _ = newQueryer()
+		ticker   = time.NewTicker(defaultScanInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_, _ = qryer.memUsage()
+		default:
+			fib(24)
+		}
+	}
+}

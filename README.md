@@ -61,6 +61,27 @@ func main() {
 
 > You can create the custom reporter by implementing the `report.Reporter` interface.
 
+## Benchmark
+
+Benchmark the overhead of watching the CPU and memory utilization. The overhead is very
+small, so we don't have to worry about the performance degradation.
+
+> You can run the benchmark test with this command.
+>
+> ```bash
+> ./benchmark.sh
+> ```
+>
+
+```
+BenchmarkLightJob-5                    	48688857	       244.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLightJobWithWatchCPUUsage-5   	48302185	       247.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLightJobWithWatchMemUsage-5   	47847954	       247.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHeavyJob-5                    	   57736	    205881 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHeavyJobWithWatchCPUUsage-5   	   58207	    208704 ns/op	       2 B/op	       0 allocs/op
+BenchmarkHeavyJobWithWatchMemUsage-5   	   56606	    206473 ns/op	       2 B/op	       0 allocs/op
+```
+
 ## License
 
 [Apache 2.0](LICENSE)
