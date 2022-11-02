@@ -1,5 +1,7 @@
 # autopprof
 
+![Run tests](https://github.com/daangn/autopprof/workflows/Run%20tests/badge.svg) [![Release](https://img.shields.io/github/v/tag/daangn/autopprof?label=Release)](https://github.com/daangn/autopprof/releases)
+
 Automatically profile the Go applications when CPU or memory utilization crosses
 threshold levels.
 
