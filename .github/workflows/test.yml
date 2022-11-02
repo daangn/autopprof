@@ -35,8 +35,8 @@ jobs:
     runs-on: macos-${{ matrix.os-version }}
     steps:
       - uses: actions/checkout@v1
-      - uses: docker-practice/actions-setup-docker@master
-      - name: Pull golang image
-        run: docker pull golang:${{ matrix.go-version }}
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "${{ matrix.go-version }}"
       - name: Run all tests
-        run: docker run --rm -v=$(pwd):/app -w=/app --cpus=1.5 -m=1000m golang:${{ matrix.go-version }} go test -v -p 1 ./...
+        run: go test -v -p 1 ./...
