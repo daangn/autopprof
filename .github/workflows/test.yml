@@ -35,8 +35,7 @@ jobs:
     runs-on: macos-${{ matrix.os-version }}
     steps:
       - uses: actions/checkout@v1
-      - name: check linux kernel version
-        run: uname -a
+      - uses: docker-practice/actions-setup-docker@master
       - name: Pull golang image
         run: docker pull golang:${{ matrix.go-version }}
       - name: Run all tests
