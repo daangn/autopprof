@@ -18,9 +18,9 @@ const (
 )
 
 type autoPprof struct {
-	// scanInterval is the interval to scan the resource usages.
+	// watchInterval is the interval to watch the resource usages.
 	// Default: 5s.
-	scanInterval time.Duration
+	watchInterval time.Duration
 
 	// cpuThreshold is the cpu usage threshold to trigger profile.
 	// If the cpu usage is over the threshold, the autopprof will
@@ -71,7 +71,7 @@ func Start(opt Option) error {
 
 	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
-		scanInterval:                defaultScanInterval,
+		watchInterval:               defaultWatchInterval,
 		cpuThreshold:                defaultCPUThreshold,
 		memThreshold:                defaultMemThreshold,
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
@@ -117,7 +117,7 @@ func (ap *autoPprof) watchCPUUsage() {
 		return
 	}
 
-	ticker := time.NewTicker(ap.scanInterval)
+	ticker := time.NewTicker(ap.watchInterval)
 	defer ticker.Stop()
 
 	var consecutiveOverThresholdCnt int
@@ -182,7 +182,7 @@ func (ap *autoPprof) watchMemUsage() {
 		return
 	}
 
-	ticker := time.NewTicker(ap.scanInterval)
+	ticker := time.NewTicker(ap.watchInterval)
 	defer ticker.Stop()
 
 	var consecutiveOverThresholdCnt int

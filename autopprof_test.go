@@ -179,7 +179,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableMemProf: true,
-		scanInterval:   1 * time.Second,
+		watchInterval:  1 * time.Second,
 		cpuThreshold:   0.5, // 50%.
 		queryer:        qryer,
 		profiler:       mockProfiler,
@@ -250,7 +250,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableMemProf:              true,
-		scanInterval:                1 * time.Second,
+		watchInterval:               1 * time.Second,
 		cpuThreshold:                0.5, // 50%.
 		minConsecutiveOverThreshold: 3,
 		queryer:                     qryer,
@@ -348,7 +348,7 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableCPUProf: true,
-		scanInterval:   1 * time.Second,
+		watchInterval:  1 * time.Second,
 		memThreshold:   0.2, // 20%.
 		queryer:        qryer,
 		profiler:       mockProfiler,
@@ -409,7 +409,7 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableCPUProf:              true,
-		scanInterval:                1 * time.Second,
+		watchInterval:               1 * time.Second,
 		memThreshold:                0.2, // 20%.
 		minConsecutiveOverThreshold: 3,
 		queryer:                     qryer,
@@ -481,7 +481,7 @@ func BenchmarkLightJob(b *testing.B) {
 func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
 	var (
 		qryer, _ = newQueryer()
-		ticker   = time.NewTicker(defaultScanInterval)
+		ticker   = time.NewTicker(defaultWatchInterval)
 	)
 	for i := 0; i < b.N; i++ {
 		select {
@@ -496,7 +496,7 @@ func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
 func BenchmarkLightJobWithWatchMemUsage(b *testing.B) {
 	var (
 		qryer, _ = newQueryer()
-		ticker   = time.NewTicker(defaultScanInterval)
+		ticker   = time.NewTicker(defaultWatchInterval)
 	)
 	for i := 0; i < b.N; i++ {
 		select {
@@ -517,7 +517,7 @@ func BenchmarkHeavyJob(b *testing.B) {
 func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
 	var (
 		qryer, _ = newQueryer()
-		ticker   = time.NewTicker(defaultScanInterval)
+		ticker   = time.NewTicker(defaultWatchInterval)
 	)
 	for i := 0; i < b.N; i++ {
 		select {
@@ -532,7 +532,7 @@ func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
 func BenchmarkHeavyJobWithWatchMemUsage(b *testing.B) {
 	var (
 		qryer, _ = newQueryer()
-		ticker   = time.NewTicker(defaultScanInterval)
+		ticker   = time.NewTicker(defaultWatchInterval)
 	)
 	for i := 0; i < b.N; i++ {
 		select {
