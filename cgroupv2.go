@@ -5,6 +5,7 @@ package autopprof
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -18,7 +19,9 @@ import (
 
 const (
 	cgroupV2MountPoint = "/sys/fs/cgroup"
-	cgroupV2CPUMaxFile = "cpu.max"
+
+	cgroupV2CPUMaxFile     = "cpu.max"
+	cgroupV2CPUMaxQuotaMax = "max"
 
 	cgroupV2CPUMaxDefaultPeriod = 100000
 )
@@ -46,6 +49,9 @@ func (c *cgroupV2) setCPUQuota() error {
 	f, err := os.Open(
 		path.Join(c.mountPoint, c.cpuMaxFile),
 	)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrV2CPUQuotaUndefined
+	}
 	if err != nil {
 		return err
 	}
@@ -57,6 +63,9 @@ func (c *cgroupV2) setCPUQuota() error {
 			return fmt.Errorf(
 				"autopprof: invalid cpu.max format",
 			)
+		}
+		if fields[0] == cgroupV2CPUMaxQuotaMax {
+			return ErrV2CPUQuotaUndefined
 		}
 
 		max, err := strconv.Atoi(fields[0])

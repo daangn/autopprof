@@ -89,9 +89,16 @@ func Start(opt Option) error {
 		ap.memThreshold = opt.MemThreshold
 	}
 	if !ap.disableCPUProf {
-		if err := ap.queryer.setCPUQuota(); err != nil {
+		err := ap.queryer.setCPUQuota()
+		// If the quota isn't set and memory profiling is also disabled,
+		//  return the error.
+		if err != nil && ap.disableMemProf {
 			return err
 		}
+		log.Println(
+			"autopprof: disable the cpu profiling due to the CPU quota isn't set",
+		)
+		ap.disableCPUProf = true
 	}
 
 	go ap.watch()

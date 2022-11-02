@@ -2,8 +2,8 @@
 
 ![Run tests](https://github.com/daangn/autopprof/workflows/Run%20tests/badge.svg) [![Release](https://img.shields.io/github/v/tag/daangn/autopprof?label=Release)](https://github.com/daangn/autopprof/releases)
 
-Automatically profile the Go applications when CPU or memory utilization crosses
-threshold levels.
+Automatically profile the Go applications when CPU or memory utilization crosses specific
+threshold levels against the Linux container CPU quota and memory limit.
 
 Once you start the autopprof, the autopprof process will periodically check the CPU and
 memory utilization of the Go applications. If the resource utilization crosses the
