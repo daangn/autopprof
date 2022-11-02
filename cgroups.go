@@ -4,13 +4,7 @@
 package autopprof
 
 import (
-	"time"
-
 	"github.com/containerd/cgroups"
-)
-
-const (
-	cpuSnapshotDuration = time.Second
 )
 
 type queryer interface {

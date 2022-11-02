@@ -29,6 +29,9 @@ type cgroupV2 struct {
 	cpuMaxFile string
 
 	cpuQuota float64
+
+	prevCPUUsage uint64
+	snapshotTime time.Time
 }
 
 func newCgroupsV2() *cgroupV2 {
@@ -77,6 +80,11 @@ func (c *cgroupV2) setCPUQuota() error {
 	return ErrV2CPUMaxEmpty
 }
 
+func (c *cgroupV2) snapshotCPUUsage(usage uint64, t time.Time) {
+	c.prevCPUUsage = usage
+	c.snapshotTime = t
+}
+
 func (c *cgroupV2) stat() (*stats.Metrics, error) {
 	path, err := cgroupsv2.NestedGroupPath(c.groupPath)
 	if err != nil {
@@ -98,19 +106,19 @@ func (c *cgroupV2) cpuUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	prev := stat.CPU.UsageUsec
+	curr := stat.CPU.UsageUsec // In microseconds.
+	snapshotTime := time.Now()
+	defer c.snapshotCPUUsage(curr, snapshotTime)
 
-	time.Sleep(cpuSnapshotDuration)
-
-	stat, err = c.stat()
-	if err != nil {
-		return 0, err
+	prev := c.prevCPUUsage
+	if prev == 0 { // First time.
+		return 0, nil
 	}
-	curr := stat.CPU.UsageUsec
 
 	delta := time.Duration(curr-prev) * time.Microsecond
-	avg := float64(delta) / float64(cpuSnapshotDuration)
-	return avg / c.cpuQuota, nil
+	duration := snapshotTime.Sub(c.snapshotTime)
+	avgUsage := float64(delta) / float64(duration)
+	return avgUsage / c.cpuQuota, nil
 }
 
 func (c *cgroupV2) memUsage() (float64, error) {

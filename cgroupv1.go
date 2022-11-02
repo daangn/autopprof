@@ -27,6 +27,9 @@ type cgroupV1 struct {
 	cpuSubsystem string
 
 	cpuQuota float64
+
+	prevCPUUsage uint64
+	snapshotTime time.Time
 }
 
 func newCgroupsV1() *cgroupV1 {
@@ -50,6 +53,11 @@ func (c *cgroupV1) setCPUQuota() error {
 	return nil
 }
 
+func (c *cgroupV1) snapshotCPUUsage(usage uint64, t time.Time) {
+	c.prevCPUUsage = usage
+	c.snapshotTime = t
+}
+
 func (c *cgroupV1) stat() (*v1.Metrics, error) {
 	var (
 		path    = cgroups.StaticPath(c.staticPath)
@@ -70,20 +78,19 @@ func (c *cgroupV1) cpuUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	prev := stat.CPU.Usage.Total // In nanoseconds.
-
-	time.Sleep(cpuSnapshotDuration)
-
-	stat, err = c.stat()
-	if err != nil {
-		return 0, err
-	}
 	curr := stat.CPU.Usage.Total // In nanoseconds.
+	snapshotTime := time.Now()
+	defer c.snapshotCPUUsage(curr, snapshotTime)
+
+	prev := c.prevCPUUsage
+	if prev == 0 { // First time.
+		return 0, nil
+	}
 
 	delta := time.Duration(curr-prev) * time.Nanosecond
-	avg := float64(delta) / float64(cpuSnapshotDuration)
-	return avg / c.cpuQuota, nil
+	duration := snapshotTime.Sub(c.snapshotTime)
+	avgUsage := float64(delta) / float64(duration)
+	return avgUsage / c.cpuQuota, nil
 }
 
 func (c *cgroupV1) memUsage() (float64, error) {

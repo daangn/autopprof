@@ -208,7 +208,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for profiling and reporting.
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(2050 * time.Millisecond)
 	if !profiled {
 		t.Errorf("cpu usage is not profiled")
 	}
@@ -281,7 +281,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for profiling and reporting.
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(2050 * time.Millisecond)
 	if profiledCnt != 1 {
 		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}

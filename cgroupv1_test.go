@@ -5,6 +5,7 @@ package autopprof
 
 import (
 	"testing"
+	"time"
 
 	"github.com/containerd/cgroups"
 )
@@ -16,7 +17,19 @@ func TestCgroupV1_cpuUsage(t *testing.T) {
 	}
 	cgv1 := newCgroupsV1()
 	cgv1.cpuQuota = 2
+
 	usage, err := cgv1.cpuUsage()
+	if err != nil {
+		t.Errorf("cpuUsage() = %v, want nil", err)
+	}
+	if usage != 0 { // The cpu usage is 0 at the beginning.
+		t.Errorf("cpuUsage() = %f, want 0", usage)
+	}
+
+	// Wait for a while to get the cpu usage.
+	time.Sleep(time.Second)
+
+	usage, err = cgv1.cpuUsage()
 	if err != nil {
 		t.Errorf("cpuUsage() = %v, want nil", err)
 	}
