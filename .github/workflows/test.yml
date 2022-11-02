@@ -13,12 +13,26 @@ on:
       - '**.md'
 
 jobs:
-  test:
+  test-on-linux:
     strategy:
       matrix:
         os-version: [ 18.04, 20.04, 22.04 ]
         go-version: [ 1.16, 1.17, 1.18, 1.19 ]
     runs-on: ubuntu-${{ matrix.os-version }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: check linux kernel version
+        run: uname -a
+      - name: Pull golang image
+        run: docker pull golang:${{ matrix.go-version }}
+      - name: Run all tests
+        run: docker run --rm -v=$(pwd):/app -w=/app --cpus=1.5 -m=1000m golang:${{ matrix.go-version }} go test -v -p 1 ./...
+  test-on-macos:
+    strategy:
+      matrix:
+        os-version: [ 11, 12 ]
+        go-version: [ 1.16, 1.17, 1.18, 1.19 ]
+    runs-on: macos-${{ matrix.os-version }}
     steps:
       - uses: actions/checkout@v1
       - name: check linux kernel version
