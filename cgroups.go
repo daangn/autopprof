@@ -7,6 +7,8 @@ import (
 	"github.com/containerd/cgroups"
 )
 
+//go:generate mockgen -source=cgroups.go -destination=cgroups_mock.go -package=autopprof
+
 type queryer interface {
 	cpuUsage() (float64, error)
 	memUsage() (float64, error)

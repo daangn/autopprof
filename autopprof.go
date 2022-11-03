@@ -89,16 +89,9 @@ func Start(opt Option) error {
 		ap.memThreshold = opt.MemThreshold
 	}
 	if !ap.disableCPUProf {
-		err := ap.queryer.setCPUQuota()
-		// If the quota isn't set and memory profiling is also disabled,
-		//  return the error.
-		if err != nil && ap.disableMemProf {
+		if err := ap.loadCPUQuota(); err != nil {
 			return err
 		}
-		log.Println(
-			"autopprof: disable the cpu profiling due to the CPU quota isn't set",
-		)
-		ap.disableCPUProf = true
 	}
 
 	go ap.watch()
@@ -111,6 +104,26 @@ func Stop() {
 	if globalAp != nil {
 		globalAp.stop()
 	}
+}
+
+func (ap *autoPprof) loadCPUQuota() error {
+	err := ap.queryer.setCPUQuota()
+	if err == nil {
+		return nil
+	}
+
+	// If memory profiling is disabled and CPU quota isn't set,
+	//  returns an error immediately.
+	if ap.disableMemProf {
+		return err
+	}
+	// If memory profiling is enabled, just logs the error and
+	//  disables the cpu profiling.
+	log.Println(
+		"autopprof: disable the cpu profiling due to the CPU quota isn't set",
+	)
+	ap.disableCPUProf = true
+	return nil
 }
 
 func (ap *autoPprof) watch() {
