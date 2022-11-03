@@ -16,6 +16,7 @@ var (
 	)
 	ErrNilReporter         = fmt.Errorf("autopprof: Reporter can't be nil")
 	ErrDisableAllProfiling = fmt.Errorf("autopprof: all profiling is disabled")
+	ErrV2CPUQuotaUndefined = fmt.Errorf("autopprof: v2 cpu quota is undefined")
 	ErrV2CPUMaxEmpty       = fmt.Errorf("autopprof: v2 cpu.max is empty")
 	ErrV1CPUSubsystemEmpty = fmt.Errorf("autopprof: v1 cpu subsystem is empty")
 )

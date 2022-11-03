@@ -146,6 +146,85 @@ func TestStop(t *testing.T) {
 	}
 }
 
+func TestAutoPprof_loadCPUQuota(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		newAp                  func() *autoPprof
+		wantDisableCPUProfFlag bool
+		wantErr                error
+	}{
+		{
+			name: "cpu quota is set",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
+
+				mockQueryer := NewMockqueryer(ctrl)
+				mockQueryer.EXPECT().
+					setCPUQuota().
+					Return(nil) // Means that the quota is set correctly.
+
+				return &autoPprof{
+					queryer:        mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: false,
+				}
+			},
+			wantDisableCPUProfFlag: false,
+			wantErr:                nil,
+		},
+		{
+			name: "cpu quota isn't set and memory profiling is enabled",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
+
+				mockQueryer := NewMockqueryer(ctrl)
+				mockQueryer.EXPECT().
+					setCPUQuota().
+					Return(ErrV2CPUQuotaUndefined)
+
+				return &autoPprof{
+					queryer:        mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: false,
+				}
+			},
+			wantDisableCPUProfFlag: true,
+			wantErr:                nil,
+		},
+		{
+			name: "cpu quota isn't set and memory profiling is disabled",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
+
+				mockQueryer := NewMockqueryer(ctrl)
+				mockQueryer.EXPECT().
+					setCPUQuota().
+					Return(ErrV2CPUQuotaUndefined)
+
+				return &autoPprof{
+					queryer:        mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: true,
+				}
+			},
+			wantDisableCPUProfFlag: false,
+			wantErr:                ErrV2CPUQuotaUndefined,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ap := tc.newAp()
+			err := ap.loadCPUQuota()
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("loadCPUQuota() = %v, want %v", err, tc.wantErr)
+			}
+			if ap.disableCPUProf != tc.wantDisableCPUProfFlag {
+				t.Errorf("disableCPUProf = %v, want %v", ap.disableCPUProf, tc.wantDisableCPUProfFlag)
+			}
+		})
+	}
+}
+
 func TestAutoPprof_watchCPUUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
