@@ -61,7 +61,7 @@ func main() {
 }
 ```
 
-> You can create the custom reporter by implementing the `report.Reporter` interface.
+> You can create a custom reporter by implementing the `report.Reporter` interface.
 
 ## Benchmark
 
