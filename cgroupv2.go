@@ -5,7 +5,6 @@ package autopprof
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -49,7 +48,7 @@ func (c *cgroupV2) setCPUQuota() error {
 	f, err := os.Open(
 		path.Join(c.mountPoint, c.cpuMaxFile),
 	)
-	if errors.Is(err, os.ErrNotExist) {
+	if os.IsNotExist(err) {
 		return ErrV2CPUQuotaUndefined
 	}
 	if err != nil {
