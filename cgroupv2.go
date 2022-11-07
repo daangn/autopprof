@@ -23,6 +23,8 @@ const (
 	cgroupV2CPUMaxQuotaMax = "max"
 
 	cgroupV2CPUMaxDefaultPeriod = 100000
+
+	cgroupV2UsageUnit = time.Microsecond
 )
 
 type cgroupV2 struct {
@@ -32,15 +34,18 @@ type cgroupV2 struct {
 
 	cpuQuota float64
 
-	prevCPUUsage uint64
-	snapshotTime time.Time
+	q cpuUsageSnapshotQueuer
 }
 
 func newCgroupsV2() *cgroupV2 {
+	q := newCPUUsageSnapshotQueue(
+		cpuUsageSnapshotQueueSize,
+	)
 	return &cgroupV2{
 		groupPath:  "",
 		mountPoint: cgroupV2MountPoint,
 		cpuMaxFile: cgroupV2CPUMaxFile,
+		q:          q,
 	}
 }
 
@@ -88,9 +93,11 @@ func (c *cgroupV2) setCPUQuota() error {
 	return ErrV2CPUMaxEmpty
 }
 
-func (c *cgroupV2) snapshotCPUUsage(usage uint64, t time.Time) {
-	c.prevCPUUsage = usage
-	c.snapshotTime = t
+func (c *cgroupV2) snapshotCPUUsage(usage uint64) {
+	c.q.enqueue(&cpuUsageSnapshot{
+		usage:     usage,
+		timestamp: time.Now(),
+	})
 }
 
 func (c *cgroupV2) stat() (*stats.Metrics, error) {
@@ -114,19 +121,17 @@ func (c *cgroupV2) cpuUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	curr := stat.CPU.UsageUsec // In microseconds.
-	snapshotTime := time.Now()
-	defer c.snapshotCPUUsage(curr, snapshotTime)
+	c.snapshotCPUUsage(stat.CPU.UsageUsec) // In microseconds.
 
-	prev := c.prevCPUUsage
-	if prev == 0 { // First time.
+	// Calculate the usage only if there are enough snapshots.
+	if !c.q.isFull() {
 		return 0, nil
 	}
 
-	delta := time.Duration(curr-prev) * time.Microsecond
-	duration := snapshotTime.Sub(c.snapshotTime)
-	avgUsage := float64(delta) / float64(duration)
-	return avgUsage / c.cpuQuota, nil
+	s1, s2 := c.q.head(), c.q.tail()
+	delta := time.Duration(s2.usage-s1.usage) * cgroupV2UsageUnit
+	duration := s2.timestamp.Sub(s1.timestamp)
+	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
 }
 
 func (c *cgroupV2) memUsage() (float64, error) {

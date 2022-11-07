@@ -233,6 +233,16 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 		reported bool
 	)
 
+	mockQueryer := NewMockqueryer(ctrl)
+	mockQueryer.EXPECT().
+		cpuUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.6, nil
+			},
+		)
+
 	mockProfiler := NewMockprofiler(ctrl)
 	mockProfiler.EXPECT().
 		profileCPU().
@@ -255,39 +265,21 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 			},
 		)
 
-	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableMemProf: true,
 		watchInterval:  1 * time.Second,
 		cpuThreshold:   0.5, // 50%.
-		queryer:        qryer,
+		queryer:        mockQueryer,
 		profiler:       mockProfiler,
 		reporter:       mockReporter,
 		stopC:          make(chan struct{}),
 	}
-	_ = qryer.setCPUQuota()
 
-	// To stop the cpu-bound loop after the test.
-	done := make(chan struct{})
-	t.Cleanup(func() { close(done) })
-
-	// Run cpu-bound loop to make cpu usage over 50%.
-	// The cpu quota of test docker container is 1.5.
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				fib(10)
-			}
-		}
-	}()
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for profiling and reporting.
-	time.Sleep(2050 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
 	if !profiled {
 		t.Errorf("cpu usage is not profiled")
 	}
@@ -303,6 +295,16 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		profiledCnt int
 		reportedCnt int
 	)
+
+	mockQueryer := NewMockqueryer(ctrl)
+	mockQueryer.EXPECT().
+		cpuUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.6, nil
+			},
+		)
 
 	mockProfiler := NewMockprofiler(ctrl)
 	mockProfiler.EXPECT().
@@ -326,41 +328,22 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 			},
 		)
 
-	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableMemProf:              true,
 		watchInterval:               1 * time.Second,
 		cpuThreshold:                0.5, // 50%.
 		minConsecutiveOverThreshold: 3,
-		queryer:                     qryer,
+		queryer:                     mockQueryer,
 		profiler:                    mockProfiler,
 		reporter:                    mockReporter,
 		stopC:                       make(chan struct{}),
 	}
-	_ = qryer.setCPUQuota()
-
-	// To stop the cpu-bound loop after the test.
-	done := make(chan struct{})
-	t.Cleanup(func() { close(done) })
-
-	// Run cpu-bound loop to make cpu usage over 50%.
-	// The cpu quota of test docker container is 1.5.
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				fib(10)
-			}
-		}
-	}()
 
 	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
 	// Wait for profiling and reporting.
-	time.Sleep(2050 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
 	if profiledCnt != 1 {
 		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
@@ -404,6 +387,16 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 		reported bool
 	)
 
+	mockQueryer := NewMockqueryer(ctrl)
+	mockQueryer.EXPECT().
+		memUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.3, nil
+			},
+		)
+
 	mockProfiler := NewMockprofiler(ctrl)
 	mockProfiler.EXPECT().
 		profileHeap().
@@ -424,22 +417,14 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 			},
 		)
 
-	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableCPUProf: true,
 		watchInterval:  1 * time.Second,
 		memThreshold:   0.2, // 20%.
-		queryer:        qryer,
+		queryer:        mockQueryer,
 		profiler:       mockProfiler,
 		reporter:       mockReporter,
 		stopC:          make(chan struct{}),
-	}
-
-	// Occupy heap memory to make memory usage over 20%.
-	// The memory limit of test docker container is 1GB.
-	m := make(map[int64]string, 10000000)
-	for i := 0; i < 10000000; i++ {
-		m[int64(i)] = "eating heap memory"
 	}
 
 	go ap.watchMemUsage()
@@ -463,6 +448,16 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 		reportedCnt int
 	)
 
+	mockQueryer := NewMockqueryer(ctrl)
+	mockQueryer.EXPECT().
+		memUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.3, nil
+			},
+		)
+
 	mockProfiler := NewMockprofiler(ctrl)
 	mockProfiler.EXPECT().
 		profileHeap().
@@ -485,23 +480,15 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 			},
 		)
 
-	qryer, _ := newQueryer()
 	ap := &autoPprof{
 		disableCPUProf:              true,
 		watchInterval:               1 * time.Second,
 		memThreshold:                0.2, // 20%.
 		minConsecutiveOverThreshold: 3,
-		queryer:                     qryer,
+		queryer:                     mockQueryer,
 		profiler:                    mockProfiler,
 		reporter:                    mockReporter,
 		stopC:                       make(chan struct{}),
-	}
-
-	// Occupy heap memory to make memory usage over 20%.
-	// The memory limit of test docker container is 1GB.
-	m := make(map[int64]string, 10000000)
-	for i := 0; i < 10000000; i++ {
-		m[int64(i)] = "eating heap memory"
 	}
 
 	go ap.watchMemUsage()
