@@ -2,8 +2,8 @@ package autopprof
 
 import "time"
 
-// cpuUsageSnapshotQueue is a queue of cpuUsageSnapshot.
-// It is a circular queue. Does not implement dequeue().
+// cpuUsageSnapshotQueue is a circular queue of cpuUsageSnapshot.
+// It doesn't implement dequeue() method because it's not needed.
 type cpuUsageSnapshotQueuer interface {
 	// Enqueue adds an element to the queue.
 	// If the queue is full, the oldest element is overwritten.
