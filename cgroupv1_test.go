@@ -17,17 +17,27 @@ func TestCgroupV1_cpuUsage(t *testing.T) {
 	}
 	cgv1 := newCgroupsV1()
 	cgv1.cpuQuota = 2
+	cgv1.q = newCPUUsageSnapshotQueue(3)
 
 	usage, err := cgv1.cpuUsage()
 	if err != nil {
 		t.Errorf("cpuUsage() = %v, want nil", err)
 	}
-	if usage != 0 { // The cpu usage is 0 at the beginning.
+	if usage != 0 { // The cpu usage is 0 until the queue is full.
 		t.Errorf("cpuUsage() = %f, want 0", usage)
 	}
 
-	// Wait for a while to get the cpu usage.
-	time.Sleep(time.Second)
+	time.Sleep(1050 * time.Millisecond)
+
+	usage, err = cgv1.cpuUsage()
+	if err != nil {
+		t.Errorf("cpuUsage() = %v, want nil", err)
+	}
+	if usage != 0 { // The cpu usage is 0 until the queue is full.
+		t.Errorf("cpuUsage() = %f, want 0", usage)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
 
 	usage, err = cgv1.cpuUsage()
 	if err != nil {

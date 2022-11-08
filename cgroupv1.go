@@ -19,6 +19,8 @@ const (
 	cgroupV1CPUSubsystem  = "cpu"
 	cgroupV1CPUQuotaFile  = "cpu.cfs_quota_us"
 	cgroupV1CPUPeriodFile = "cpu.cfs_period_us"
+
+	cgroupV1UsageUnit = time.Nanosecond
 )
 
 type cgroupV1 struct {
@@ -28,15 +30,18 @@ type cgroupV1 struct {
 
 	cpuQuota float64
 
-	prevCPUUsage uint64
-	snapshotTime time.Time
+	q cpuUsageSnapshotQueuer
 }
 
 func newCgroupsV1() *cgroupV1 {
+	q := newCPUUsageSnapshotQueue(
+		cpuUsageSnapshotQueueSize,
+	)
 	return &cgroupV1{
 		staticPath:   "/",
 		mountPoint:   cgroupV1MountPoint,
 		cpuSubsystem: cgroupV1CPUSubsystem,
+		q:            q,
 	}
 }
 
@@ -53,9 +58,11 @@ func (c *cgroupV1) setCPUQuota() error {
 	return nil
 }
 
-func (c *cgroupV1) snapshotCPUUsage(usage uint64, t time.Time) {
-	c.prevCPUUsage = usage
-	c.snapshotTime = t
+func (c *cgroupV1) snapshotCPUUsage(usage uint64) {
+	c.q.enqueue(&cpuUsageSnapshot{
+		usage:     usage,
+		timestamp: time.Now(),
+	})
 }
 
 func (c *cgroupV1) stat() (*v1.Metrics, error) {
@@ -78,19 +85,17 @@ func (c *cgroupV1) cpuUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	curr := stat.CPU.Usage.Total // In nanoseconds.
-	snapshotTime := time.Now()
-	defer c.snapshotCPUUsage(curr, snapshotTime)
+	c.snapshotCPUUsage(stat.CPU.Usage.Total) // In nanoseconds.
 
-	prev := c.prevCPUUsage
-	if prev == 0 { // First time.
+	// Calculate the usage only if there are enough snapshots.
+	if !c.q.isFull() {
 		return 0, nil
 	}
 
-	delta := time.Duration(curr-prev) * time.Nanosecond
-	duration := snapshotTime.Sub(c.snapshotTime)
-	avgUsage := float64(delta) / float64(duration)
-	return avgUsage / c.cpuQuota, nil
+	s1, s2 := c.q.head(), c.q.tail()
+	delta := time.Duration(s2.usage-s1.usage) * cgroupV1UsageUnit
+	duration := s2.timestamp.Sub(s1.timestamp)
+	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
 }
 
 func (c *cgroupV1) memUsage() (float64, error) {
