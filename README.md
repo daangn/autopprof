@@ -76,12 +76,12 @@ small, so we don't have to worry about the performance degradation.
 >
 
 ```
-BenchmarkLightJob-5                    	48688857	       244.4 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLightJobWithWatchCPUUsage-5   	48302185	       247.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLightJobWithWatchMemUsage-5   	47847954	       247.4 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHeavyJob-5                    	   57736	    205881 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHeavyJobWithWatchCPUUsage-5   	   58207	    208704 ns/op	       2 B/op	       0 allocs/op
-BenchmarkHeavyJobWithWatchMemUsage-5   	   56606	    206473 ns/op	       2 B/op	       0 allocs/op
+BenchmarkLightJob-5                    	49444164	       245.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLightJobWithWatchCPUUsage-5   	48884026	       250.1 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLightJobWithWatchMemUsage-5   	49036617	       246.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHeavyJob-5                    	   59010	      203759 ns/op	       0 B/op	       0 allocs/op
+BenchmarkHeavyJobWithWatchCPUUsage-5   	   58915	      204054 ns/op	       2 B/op	       0 allocs/op
+BenchmarkHeavyJobWithWatchMemUsage-5   	   58850	      204764 ns/op	       2 B/op	       0 allocs/op
 ```
 
 ## License
