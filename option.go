@@ -33,6 +33,10 @@ type Option struct {
 	//  is higher than this threshold.
 	MemThreshold float64
 
+	// ReportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
+	// If some profiling is disabled, exclude it.
+	ReportBoth bool
+
 	// Reporter is the reporter to send the profiling report implementing
 	//  the report.Reporter interface.
 	Reporter report.Reporter
