@@ -379,6 +379,162 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 	}
 }
 
+func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
+	type fields struct {
+		watchInterval  time.Duration
+		cpuThreshold   float64
+		reportBoth     bool
+		disableMemProf bool
+		stopC          chan struct{}
+	}
+	testCases := []struct {
+		name     string
+		fields   fields
+		mockFunc func(*Mockqueryer, *Mockprofiler, *report.MockReporter)
+	}{
+		{
+			name: "reportBoth: true",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				cpuThreshold:   0.5, // 50%.
+				reportBoth:     true,
+				disableMemProf: false,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						cpuUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockQueryer.EXPECT().
+						memUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportBoth: true, disableMemProf: true",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				cpuThreshold:   0.5, // 50%.
+				reportBoth:     true,
+				disableMemProf: true,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						cpuUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportBoth: false",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				cpuThreshold:   0.5, // 50%.
+				reportBoth:     false,
+				disableMemProf: false,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						cpuUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			mockQueryer := NewMockqueryer(ctrl)
+			mockProfiler := NewMockprofiler(ctrl)
+			mockReporter := report.NewMockReporter(ctrl)
+
+			ap := &autoPprof{
+				watchInterval:  tc.fields.watchInterval,
+				cpuThreshold:   tc.fields.cpuThreshold,
+				memThreshold:   0.5, // 50%.
+				queryer:        mockQueryer,
+				profiler:       mockProfiler,
+				reporter:       mockReporter,
+				reportBoth:     tc.fields.reportBoth,
+				disableMemProf: tc.fields.disableMemProf,
+				stopC:          tc.fields.stopC,
+			}
+
+			tc.mockFunc(mockQueryer, mockProfiler, mockReporter)
+
+			go ap.watchCPUUsage()
+			defer ap.stop()
+
+			// Wait for profiling and reporting.
+			time.Sleep(1050 * time.Millisecond)
+		})
+	}
+}
+
 func TestAutoPprof_watchMemUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -528,6 +684,162 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	}
 	if reportedCnt != 2 {
 		t.Errorf("mem usage is reported %d times, want 2", reportedCnt)
+	}
+}
+
+func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
+	type fields struct {
+		watchInterval  time.Duration
+		memThreshold   float64
+		reportBoth     bool
+		disableCPUProf bool
+		stopC          chan struct{}
+	}
+	testCases := []struct {
+		name     string
+		fields   fields
+		mockFunc func(*Mockqueryer, *Mockprofiler, *report.MockReporter)
+	}{
+		{
+			name: "reportBoth: true",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				memThreshold:   0.5, // 50%.
+				reportBoth:     true,
+				disableCPUProf: false,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						memUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockQueryer.EXPECT().
+						cpuUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportBoth: true, disableCPUProf: true",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				memThreshold:   0.5, // 50%.
+				reportBoth:     true,
+				disableCPUProf: true,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						memUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportBoth: false",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				memThreshold:   0.5, // 50%.
+				reportBoth:     false,
+				disableCPUProf: false,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockQueryer *Mockqueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockQueryer.EXPECT().
+						memUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			mockQueryer := NewMockqueryer(ctrl)
+			mockProfiler := NewMockprofiler(ctrl)
+			mockReporter := report.NewMockReporter(ctrl)
+
+			ap := &autoPprof{
+				watchInterval:  tc.fields.watchInterval,
+				cpuThreshold:   0.5, // 50%.
+				memThreshold:   tc.fields.memThreshold,
+				queryer:        mockQueryer,
+				profiler:       mockProfiler,
+				reporter:       mockReporter,
+				reportBoth:     tc.fields.reportBoth,
+				disableCPUProf: tc.fields.disableCPUProf,
+				stopC:          tc.fields.stopC,
+			}
+
+			tc.mockFunc(mockQueryer, mockProfiler, mockReporter)
+
+			go ap.watchMemUsage()
+			defer ap.stop()
+
+			// Wait for profiling and reporting.
+			time.Sleep(1050 * time.Millisecond)
+		})
 	}
 }
 

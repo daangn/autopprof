@@ -48,6 +48,10 @@ type autoPprof struct {
 	// reporter is the reporter to send the profiling reports.
 	reporter report.Reporter
 
+	// reportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
+	// If some profiling is disabled, exclude it.
+	reportBoth bool
+
 	// Flags to disable the profiling.
 	disableCPUProf bool
 	disableMemProf bool
@@ -78,6 +82,7 @@ func Start(opt Option) error {
 		queryer:                     qryer,
 		profiler:                    profr,
 		reporter:                    opt.Reporter,
+		reportBoth:                  opt.ReportBoth,
 		disableCPUProf:              opt.DisableCPUProf,
 		disableMemProf:              opt.DisableMemProf,
 		stopC:                       make(chan struct{}),
@@ -164,6 +169,18 @@ func (ap *autoPprof) watchCPUUsage() {
 						"autopprof: failed to report the cpu profile: %w", err,
 					))
 				}
+				if ap.reportBoth && !ap.disableMemProf {
+					memUsage, err := ap.queryer.memUsage()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					if err := ap.reportHeapProfile(memUsage); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the heap profile: %w", err,
+						))
+					}
+				}
 			}
 
 			consecutiveOverThresholdCnt++
@@ -228,6 +245,18 @@ func (ap *autoPprof) watchMemUsage() {
 					log.Println(fmt.Errorf(
 						"autopprof: failed to report the heap profile: %w", err,
 					))
+				}
+				if ap.reportBoth && !ap.disableCPUProf {
+					cpuUsage, err := ap.queryer.cpuUsage()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					if err := ap.reportCPUProfile(cpuUsage); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the cpu profile: %w", err,
+						))
+					}
 				}
 			}
 
