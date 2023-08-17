@@ -387,7 +387,7 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 		disableMemProf bool
 		stopC          chan struct{}
 	}
-	tests := []struct {
+	testCases := []struct {
 		name     string
 		fields   fields
 		mockFunc func(*Mockqueryer, *Mockprofiler, *report.MockReporter)
@@ -504,8 +504,8 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockQueryer := NewMockqueryer(ctrl)
@@ -513,18 +513,18 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 			mockReporter := report.NewMockReporter(ctrl)
 
 			ap := &autoPprof{
-				watchInterval:  tt.fields.watchInterval,
-				cpuThreshold:   tt.fields.cpuThreshold,
+				watchInterval:  tc.fields.watchInterval,
+				cpuThreshold:   tc.fields.cpuThreshold,
 				memThreshold:   0.5, // 50%.
 				queryer:        mockQueryer,
 				profiler:       mockProfiler,
 				reporter:       mockReporter,
-				reportBoth:     tt.fields.reportBoth,
-				disableMemProf: tt.fields.disableMemProf,
-				stopC:          tt.fields.stopC,
+				reportBoth:     tc.fields.reportBoth,
+				disableMemProf: tc.fields.disableMemProf,
+				stopC:          tc.fields.stopC,
 			}
 
-			tt.mockFunc(mockQueryer, mockProfiler, mockReporter)
+			tc.mockFunc(mockQueryer, mockProfiler, mockReporter)
 
 			go ap.watchCPUUsage()
 			defer ap.stop()
@@ -695,7 +695,7 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 		disableCPUProf bool
 		stopC          chan struct{}
 	}
-	tests := []struct {
+	testCases := []struct {
 		name     string
 		fields   fields
 		mockFunc func(*Mockqueryer, *Mockprofiler, *report.MockReporter)
@@ -812,8 +812,8 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockQueryer := NewMockqueryer(ctrl)
@@ -821,18 +821,18 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 			mockReporter := report.NewMockReporter(ctrl)
 
 			ap := &autoPprof{
-				watchInterval:  tt.fields.watchInterval,
+				watchInterval:  tc.fields.watchInterval,
 				cpuThreshold:   0.5, // 50%.
-				memThreshold:   tt.fields.memThreshold,
+				memThreshold:   tc.fields.memThreshold,
 				queryer:        mockQueryer,
 				profiler:       mockProfiler,
 				reporter:       mockReporter,
-				reportBoth:     tt.fields.reportBoth,
-				disableCPUProf: tt.fields.disableCPUProf,
-				stopC:          tt.fields.stopC,
+				reportBoth:     tc.fields.reportBoth,
+				disableCPUProf: tc.fields.disableCPUProf,
+				stopC:          tc.fields.stopC,
 			}
 
-			tt.mockFunc(mockQueryer, mockProfiler, mockReporter)
+			tc.mockFunc(mockQueryer, mockProfiler, mockReporter)
 
 			go ap.watchMemUsage()
 			defer ap.stop()
