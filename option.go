@@ -9,6 +9,7 @@ import (
 const (
 	defaultCPUThreshold                = 0.75
 	defaultMemThreshold                = 0.75
+	defaultGoroutineThreshold          = 10000
 	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
 	defaultMinConsecutiveOverThreshold = 12 // min 1 minute. (12*5s)
@@ -32,6 +33,12 @@ type Option struct {
 	// Autopprof will start the heap profiling when the memory usage
 	//  is higher than this threshold.
 	MemThreshold float64
+
+	// GoroutineThreshold is the goroutine count threshold to trigger the goroutine profiling.
+	//  to trigger the goroutine profiling.
+	// Autopprof will start the goroutine profiling when the goroutine count
+	//  is higher than this threshold.
+	GoroutineThreshold int
 
 	// ReportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
 	// If some profiling is disabled, exclude it.

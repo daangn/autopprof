@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package autopprof
+package queryer
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	"github.com/containerd/cgroups"
 )
 
-func TestCgroupV1_cpuUsage(t *testing.T) {
+func TestCgroupV1_CpuUsage(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Legacy {
 		t.Skip("cgroup v1 is not available")
@@ -19,57 +19,57 @@ func TestCgroupV1_cpuUsage(t *testing.T) {
 	cgv1.cpuQuota = 2
 	cgv1.q = newCPUUsageSnapshotQueue(3)
 
-	usage, err := cgv1.cpuUsage()
+	usage, err := cgv1.CpuUsage()
 	if err != nil {
-		t.Errorf("cpuUsage() = %v, want nil", err)
+		t.Errorf("CpuUsage() = %v, want nil", err)
 	}
 	if usage != 0 { // The cpu usage is 0 until the queue is full.
-		t.Errorf("cpuUsage() = %f, want 0", usage)
+		t.Errorf("CpuUsage() = %f, want 0", usage)
 	}
 
 	time.Sleep(1050 * time.Millisecond)
 
-	usage, err = cgv1.cpuUsage()
+	usage, err = cgv1.CpuUsage()
 	if err != nil {
-		t.Errorf("cpuUsage() = %v, want nil", err)
+		t.Errorf("CpuUsage() = %v, want nil", err)
 	}
 	if usage != 0 { // The cpu usage is 0 until the queue is full.
-		t.Errorf("cpuUsage() = %f, want 0", usage)
+		t.Errorf("CpuUsage() = %f, want 0", usage)
 	}
 
 	time.Sleep(1050 * time.Millisecond)
 
-	usage, err = cgv1.cpuUsage()
+	usage, err = cgv1.CpuUsage()
 	if err != nil {
-		t.Errorf("cpuUsage() = %v, want nil", err)
+		t.Errorf("CpuUsage() = %v, want nil", err)
 	}
 	if usage < 0 || usage > 1 {
-		t.Errorf("cpuUsage() = %f, want between 0 and 1", usage)
+		t.Errorf("CpuUsage() = %f, want between 0 and 1", usage)
 	}
 }
 
-func TestCgroupV1_memUsage(t *testing.T) {
+func TestCgroupV1_MemUsage(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Legacy {
 		t.Skip("cgroup v1 is not available")
 	}
-	usage, err := newCgroupsV1().memUsage()
+	usage, err := newCgroupsV1().MemUsage()
 	if err != nil {
-		t.Errorf("memUsage() = %v, want nil", err)
+		t.Errorf("MemUsage() = %v, want nil", err)
 	}
 	if usage < 0 || usage > 1 {
-		t.Errorf("memUsage() = %f, want between 0 and 1", usage)
+		t.Errorf("MemUsage() = %f, want between 0 and 1", usage)
 	}
 }
 
-func TestCgroupV1_setCPUQuota(t *testing.T) {
+func TestCgroupV1_SetCPUQuota(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Legacy {
 		t.Skip("cgroup v1 is not available")
 	}
 	cgv1 := newCgroupsV1()
-	if err := cgv1.setCPUQuota(); err != nil {
-		t.Errorf("setCPUQuota() = %v, want nil", err)
+	if err := cgv1.SetCPUQuota(); err != nil {
+		t.Errorf("SetCPUQuota() = %v, want nil", err)
 	}
 	// The cpu quota of test docker container is 1.5.
 	if cgv1.cpuQuota != 1.5 {

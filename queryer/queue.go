@@ -1,10 +1,10 @@
-package autopprof
+package queryer
 
 import "time"
 
-// cpuUsageSnapshotQueue is a circular queue of cpuUsageSnapshot.
+// CpuUsageSnapshotQueue is a circular queue of cpuUsageSnapshot.
 // It doesn't implement dequeue() method because it's not needed.
-type cpuUsageSnapshotQueuer interface {
+type CpuUsageSnapshotQueuer interface {
 	// Enqueue adds an element to the queue.
 	// If the queue is full, the oldest element is overwritten.
 	enqueue(snapshot *cpuUsageSnapshot)

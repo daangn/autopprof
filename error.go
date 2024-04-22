@@ -7,7 +7,6 @@ var (
 	ErrUnsupportedPlatform = fmt.Errorf(
 		"autopprof: unsupported platform (only Linux is supported)",
 	)
-	ErrCgroupsUnavailable  = fmt.Errorf("autopprof: cgroups is unavailable")
 	ErrInvalidCPUThreshold = fmt.Errorf(
 		"autopprof: cpu threshold value must be between 0 and 1",
 	)

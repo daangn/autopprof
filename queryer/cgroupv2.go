@@ -1,11 +1,12 @@
 //go:build linux
 // +build linux
 
-package autopprof
+package queryer
 
 import (
 	"bufio"
 	"fmt"
+	"github.com/daangn/autopprof"
 	"os"
 	"path"
 	"strconv"
@@ -34,7 +35,7 @@ type cgroupV2 struct {
 
 	cpuQuota float64
 
-	q cpuUsageSnapshotQueuer
+	q CpuUsageSnapshotQueuer
 }
 
 func newCgroupsV2() *cgroupV2 {
@@ -49,12 +50,43 @@ func newCgroupsV2() *cgroupV2 {
 	}
 }
 
-func (c *cgroupV2) setCPUQuota() error {
+func (c *cgroupV2) CpuUsage() (float64, error) {
+	stat, err := c.stat()
+	if err != nil {
+		return 0, err
+	}
+	c.snapshotCPUUsage(stat.CPU.UsageUsec) // In microseconds.
+
+	// Calculate the usage only if there are enough snapshots.
+	if !c.q.isFull() {
+		return 0, nil
+	}
+
+	s1, s2 := c.q.head(), c.q.tail()
+	delta := time.Duration(s2.usage-s1.usage) * cgroupV2UsageUnit
+	duration := s2.timestamp.Sub(s1.timestamp)
+	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
+}
+
+func (c *cgroupV2) MemUsage() (float64, error) {
+	stat, err := c.stat()
+	if err != nil {
+		return 0, err
+	}
+	var (
+		sm    = stat.Memory
+		usage = sm.Usage - sm.InactiveFile
+		limit = sm.UsageLimit
+	)
+	return float64(usage) / float64(limit), nil
+}
+
+func (c *cgroupV2) SetCPUQuota() error {
 	f, err := os.Open(
 		path.Join(c.mountPoint, c.cpuMaxFile),
 	)
 	if os.IsNotExist(err) {
-		return ErrV2CPUQuotaUndefined
+		return autopprof.ErrV2CPUQuotaUndefined
 	}
 	if err != nil {
 		return err
@@ -69,7 +101,7 @@ func (c *cgroupV2) setCPUQuota() error {
 			)
 		}
 		if fields[0] == cgroupV2CPUMaxQuotaMax {
-			return ErrV2CPUQuotaUndefined
+			return autopprof.ErrV2CPUQuotaUndefined
 		}
 
 		max, err := strconv.Atoi(fields[0])
@@ -90,7 +122,7 @@ func (c *cgroupV2) setCPUQuota() error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	return ErrV2CPUMaxEmpty
+	return autopprof.ErrV2CPUMaxEmpty
 }
 
 func (c *cgroupV2) snapshotCPUUsage(usage uint64) {
@@ -114,35 +146,4 @@ func (c *cgroupV2) stat() (*stats.Metrics, error) {
 		return nil, err
 	}
 	return stat, nil
-}
-
-func (c *cgroupV2) cpuUsage() (float64, error) {
-	stat, err := c.stat()
-	if err != nil {
-		return 0, err
-	}
-	c.snapshotCPUUsage(stat.CPU.UsageUsec) // In microseconds.
-
-	// Calculate the usage only if there are enough snapshots.
-	if !c.q.isFull() {
-		return 0, nil
-	}
-
-	s1, s2 := c.q.head(), c.q.tail()
-	delta := time.Duration(s2.usage-s1.usage) * cgroupV2UsageUnit
-	duration := s2.timestamp.Sub(s1.timestamp)
-	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
-}
-
-func (c *cgroupV2) memUsage() (float64, error) {
-	stat, err := c.stat()
-	if err != nil {
-		return 0, err
-	}
-	var (
-		sm    = stat.Memory
-		usage = sm.Usage - sm.InactiveFile
-		limit = sm.UsageLimit
-	)
-	return float64(usage) / float64(limit), nil
 }
