@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/daangn/autopprof/queryer"
 	"log"
-	"runtime/pprof"
 	"time"
 
 	"github.com/daangn/autopprof/report"
@@ -81,12 +80,14 @@ func Start(opt Option) error {
 	if err != nil {
 		return err
 	}
+
+	runtimeQryer, err := queryer.NewRuntimeQueryer()
+	if err != nil {
+		return err
+	}
 	if err := opt.validate(); err != nil {
 		return err
 	}
-
-	pprof.Profiles()
-	runtimeQryer, err := queryer.NewRuntimeQueryer()
 
 	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
