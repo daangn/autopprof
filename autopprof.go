@@ -345,7 +345,7 @@ func (ap *autoPprof) watchGoroutineCount() {
 
 			consecutiveOverThresholdCnt++
 			if consecutiveOverThresholdCnt >= ap.minConsecutiveOverThreshold {
-				// Reset the count and ready to report the cpu profile again.
+				// Reset the count and ready to report the goroutine profile again.
 				consecutiveOverThresholdCnt = 0
 			}
 		case <-ap.stopC:
