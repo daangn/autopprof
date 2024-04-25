@@ -21,6 +21,8 @@ type Option struct {
 	DisableCPUProf bool
 	// DisableMemProf disables the memory profiling.
 	DisableMemProf bool
+	// DisableGoroutineProf disables the goroutine profiling.
+	DisableGoroutineProf bool
 
 	// CPUThreshold is the cpu usage threshold (between 0 and 1)
 	//  to trigger the cpu profiling.
@@ -51,7 +53,7 @@ type Option struct {
 
 // NOTE(mingrammer): testing the validate() is done in autopprof_test.go.
 func (o Option) validate() error {
-	if o.DisableCPUProf && o.DisableMemProf {
+	if o.DisableCPUProf && o.DisableMemProf && o.DisableGoroutineProf {
 		return ErrDisableAllProfiling
 	}
 	if o.CPUThreshold < 0 || o.CPUThreshold > 1 {
@@ -59,6 +61,9 @@ func (o Option) validate() error {
 	}
 	if o.MemThreshold < 0 || o.MemThreshold > 1 {
 		return ErrInvalidMemThreshold
+	}
+	if o.GoroutineThreshold < 0 {
+		return ErrInvalidGoroutineThreshold
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

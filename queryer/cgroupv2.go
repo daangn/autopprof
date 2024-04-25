@@ -6,7 +6,6 @@ package queryer
 import (
 	"bufio"
 	"fmt"
-	"github.com/daangn/autopprof"
 	"os"
 	"path"
 	"strconv"
@@ -86,7 +85,7 @@ func (c *cgroupV2) SetCPUQuota() error {
 		path.Join(c.mountPoint, c.cpuMaxFile),
 	)
 	if os.IsNotExist(err) {
-		return autopprof.ErrV2CPUQuotaUndefined
+		return ErrV2CPUQuotaUndefined
 	}
 	if err != nil {
 		return err
@@ -101,7 +100,7 @@ func (c *cgroupV2) SetCPUQuota() error {
 			)
 		}
 		if fields[0] == cgroupV2CPUMaxQuotaMax {
-			return autopprof.ErrV2CPUQuotaUndefined
+			return ErrV2CPUQuotaUndefined
 		}
 
 		max, err := strconv.Atoi(fields[0])
@@ -122,7 +121,7 @@ func (c *cgroupV2) SetCPUQuota() error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	return autopprof.ErrV2CPUMaxEmpty
+	return ErrV2CPUMaxEmpty
 }
 
 func (c *cgroupV2) snapshotCPUUsage(usage uint64) {

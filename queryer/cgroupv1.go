@@ -5,7 +5,6 @@ package queryer
 
 import (
 	"bufio"
-	"github.com/daangn/autopprof"
 	"os"
 	"path"
 	"strconv"
@@ -130,5 +129,5 @@ func (c *cgroupV1) parseCPU(filename string) (int, error) {
 	if err := scanner.Err(); err != nil {
 		return 0, err
 	}
-	return 0, autopprof.ErrV1CPUSubsystemEmpty
+	return 0, ErrV1CPUSubsystemEmpty
 }

@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"github.com/daangn/autopprof/queryer"
-	"go.uber.org/mock/gomock"
+	"github.com/golang/mock/gomock"
 	"io"
 	"testing"
 	"time"
@@ -24,8 +24,9 @@ func TestStart(t *testing.T) {
 		{
 			name: "disable flags are all true",
 			opt: Option{
-				DisableCPUProf: true,
-				DisableMemProf: true,
+				DisableCPUProf:       true,
+				DisableMemProf:       true,
+				DisableGoroutineProf: true,
 			},
 			want: ErrDisableAllProfiling,
 		},
@@ -56,6 +57,13 @@ func TestStart(t *testing.T) {
 				MemThreshold: 2.5,
 			},
 			want: ErrInvalidMemThreshold,
+		},
+		{
+			name: "invalid GoroutineThreshold value -1",
+			opt: Option{
+				GoroutineThreshold: -1,
+			},
+			want: ErrInvalidGoroutineThreshold,
 		},
 		{
 			name: "when given reporter is nil",
@@ -180,7 +188,7 @@ func TestAutoPprof_loadCPUQuota(t *testing.T) {
 				mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
 				mockQueryer.EXPECT().
 					SetCPUQuota().
-					Return(ErrV2CPUQuotaUndefined)
+					Return(queryer.ErrV2CPUQuotaUndefined)
 
 				return &autoPprof{
 					cgroupQueryer:  mockQueryer,
@@ -199,7 +207,7 @@ func TestAutoPprof_loadCPUQuota(t *testing.T) {
 				mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
 				mockQueryer.EXPECT().
 					SetCPUQuota().
-					Return(ErrV2CPUQuotaUndefined)
+					Return(queryer.ErrV2CPUQuotaUndefined)
 
 				return &autoPprof{
 					cgroupQueryer:  mockQueryer,
@@ -208,7 +216,7 @@ func TestAutoPprof_loadCPUQuota(t *testing.T) {
 				}
 			},
 			wantDisableCPUProfFlag: false,
-			wantErr:                ErrV2CPUQuotaUndefined,
+			wantErr:                queryer.ErrV2CPUQuotaUndefined,
 		},
 	}
 	for _, tc := range testCases {
@@ -875,7 +883,7 @@ func TestAutoPprof_watchGoroutineCount(t *testing.T) {
 	mockReporter.EXPECT().
 		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
 				reported = true
 				return nil
 			},
@@ -883,6 +891,7 @@ func TestAutoPprof_watchGoroutineCount(t *testing.T) {
 
 	ap := &autoPprof{
 		disableCPUProf:     true,
+		disableMemProf:     true,
 		watchInterval:      1 * time.Second,
 		goroutineThreshold: 100,
 		runtimeQueryer:     mockQueryer,
@@ -917,7 +926,7 @@ func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
 		GoroutineCount().
 		AnyTimes().
 		DoAndReturn(
-			func() (float64, error) {
+			func() (int, error) {
 				return 200, nil
 			},
 		)
@@ -938,7 +947,7 @@ func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
 		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
 				reportedCnt++
 				return nil
 			},
@@ -946,8 +955,8 @@ func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
 
 	ap := &autoPprof{
 		disableCPUProf:              true,
+		disableMemProf:              true,
 		watchInterval:               1 * time.Second,
-		memThreshold:                0.2, // 20%.
 		goroutineThreshold:          100,
 		minConsecutiveOverThreshold: 3,
 		runtimeQueryer:              mockQueryer,
