@@ -6,11 +6,13 @@ package autopprof
 import (
 	"context"
 	"errors"
-	"github.com/daangn/autopprof/queryer"
-	"github.com/golang/mock/gomock"
 	"io"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/daangn/autopprof/queryer"
+	"github.com/golang/mock/gomock"
 
 	"github.com/daangn/autopprof/report"
 )
@@ -1080,6 +1082,72 @@ func BenchmarkHeavyJobWithWatchMemUsage(b *testing.B) {
 			_, _ = qryer.MemUsage()
 		default:
 			fib(24)
+		}
+	}
+}
+
+func fibAsync(n int) int64 {
+	if n <= 1 {
+		return int64(n)
+	}
+
+	var (
+		v  int64
+		m  sync.Mutex
+		wg sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		m.Lock()
+		defer m.Unlock()
+		v = fibAsync(n-1) + fibAsync(n-2)
+	}()
+	wg.Wait()
+
+	return v
+}
+
+func BenchmarkLightAsyncJob(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		fibAsync(10)
+	}
+}
+
+func BenchmarkLightAsyncJobWithWatchGoroutineCount(b *testing.B) {
+	var (
+		qryer, _ = queryer.NewRuntimeQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_ = qryer.GoroutineCount()
+		default:
+			fibAsync(10)
+		}
+	}
+}
+
+func BenchmarkHeavyAsyncJob(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		fibAsync(24)
+	}
+}
+
+func BenchmarkHeavyAsyncJobWithWatchGoroutineCount(b *testing.B) {
+	var (
+		qryer, _ = queryer.NewRuntimeQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ticker.C:
+			_ = qryer.GoroutineCount()
+		default:
+			fibAsync(24)
 		}
 	}
 }
