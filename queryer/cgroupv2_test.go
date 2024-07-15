@@ -10,7 +10,7 @@ import (
 	"github.com/containerd/cgroups"
 )
 
-func TestCgroupV2_CpuUsage(t *testing.T) {
+func TestCgroupV2_CPUUsage(t *testing.T) {
 	mode := cgroups.Mode()
 	if mode != cgroups.Hybrid && mode != cgroups.Unified {
 		t.Skip("cgroup v2 is not available")
@@ -19,32 +19,32 @@ func TestCgroupV2_CpuUsage(t *testing.T) {
 	cgv2.cpuQuota = 2
 	cgv2.q = newCPUUsageSnapshotQueue(3)
 
-	usage, err := cgv2.CpuUsage()
+	usage, err := cgv2.CPUUsage()
 	if err != nil {
-		t.Errorf("CpuUsage() = %v, want nil", err)
+		t.Errorf("CPUUsage() = %v, want nil", err)
 	}
 	if usage != 0 { // The cpu usage is 0 until the queue is full.
-		t.Errorf("CpuUsage() = %f, want 0", usage)
+		t.Errorf("CPUUsage() = %f, want 0", usage)
 	}
 
 	time.Sleep(1050 * time.Millisecond)
 
-	usage, err = cgv2.CpuUsage()
+	usage, err = cgv2.CPUUsage()
 	if err != nil {
-		t.Errorf("CpuUsage() = %v, want nil", err)
+		t.Errorf("CPUUsage() = %v, want nil", err)
 	}
 	if usage != 0 { // The cpu usage is 0 until the queue is full.
-		t.Errorf("CpuUsage() = %f, want 0", usage)
+		t.Errorf("CPUUsage() = %f, want 0", usage)
 	}
 
 	time.Sleep(1050 * time.Millisecond)
 
-	usage, err = cgv2.CpuUsage()
+	usage, err = cgv2.CPUUsage()
 	if err != nil {
-		t.Errorf("CpuUsage() = %v, want nil", err)
+		t.Errorf("CPUUsage() = %v, want nil", err)
 	}
 	if usage < 0 || usage > 1 {
-		t.Errorf("CpuUsage() = %f, want between 0 and 1", usage)
+		t.Errorf("CPUUsage() = %f, want between 0 and 1", usage)
 	}
 }
 

@@ -245,7 +245,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 
 	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
 	mockQueryer.EXPECT().
-		CpuUsage().
+		CPUUsage().
 		AnyTimes().
 		DoAndReturn(
 			func() (float64, error) {
@@ -308,7 +308,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 
 	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
 	mockQueryer.EXPECT().
-		CpuUsage().
+		CPUUsage().
 		AnyTimes().
 		DoAndReturn(
 			func() (float64, error) {
@@ -414,7 +414,7 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 			mockFunc: func(mockQueryer *queryer.MockCgroupsQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
 				gomock.InOrder(
 					mockQueryer.EXPECT().
-						CpuUsage().
+						CPUUsage().
 						AnyTimes().
 						Return(0.6, nil),
 
@@ -463,7 +463,7 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 			mockFunc: func(mockQueryer *queryer.MockCgroupsQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
 				gomock.InOrder(
 					mockQueryer.EXPECT().
-						CpuUsage().
+						CPUUsage().
 						AnyTimes().
 						Return(0.6, nil),
 
@@ -494,7 +494,7 @@ func TestAutoPprof_watchCPUUsage_reportBoth(t *testing.T) {
 			mockFunc: func(mockQueryer *queryer.MockCgroupsQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
 				gomock.InOrder(
 					mockQueryer.EXPECT().
-						CpuUsage().
+						CPUUsage().
 						AnyTimes().
 						Return(0.6, nil),
 
@@ -740,7 +740,7 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 						Return(nil),
 
 					mockQueryer.EXPECT().
-						CpuUsage().
+						CPUUsage().
 						AnyTimes().
 						Return(0.2, nil),
 
@@ -1028,7 +1028,7 @@ func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
-			_, _ = qryer.CpuUsage()
+			_, _ = qryer.CPUUsage()
 		default:
 			fib(10)
 		}
@@ -1064,7 +1064,7 @@ func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
-			_, _ = qryer.CpuUsage()
+			_, _ = qryer.CPUUsage()
 		default:
 			fib(24)
 		}

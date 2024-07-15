@@ -171,7 +171,7 @@ func (ap *autoPprof) watchCPUUsage() {
 	for {
 		select {
 		case <-ticker.C:
-			usage, err := ap.cgroupQueryer.CpuUsage()
+			usage, err := ap.cgroupQueryer.CPUUsage()
 			if err != nil {
 				log.Println(err)
 				return
@@ -269,7 +269,7 @@ func (ap *autoPprof) watchMemUsage() {
 					))
 				}
 				if ap.reportBoth && !ap.disableCPUProf {
-					cpuUsage, err := ap.cgroupQueryer.CpuUsage()
+					cpuUsage, err := ap.cgroupQueryer.CPUUsage()
 					if err != nil {
 						log.Println(err)
 						return
@@ -364,12 +364,12 @@ func (ap *autoPprof) reportGoroutineProfile(goroutineCount int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
 	defer cancel()
 
-	ci := report.GoroutineInfo{
+	gi := report.GoroutineInfo{
 		ThresholdCount: ap.goroutineThreshold,
 		Count:          goroutineCount,
 	}
 	bReader := bytes.NewReader(b)
-	if err := ap.reporter.ReportGoroutineProfile(ctx, bReader, ci); err != nil {
+	if err := ap.reporter.ReportGoroutineProfile(ctx, bReader, gi); err != nil {
 		return err
 	}
 	return nil

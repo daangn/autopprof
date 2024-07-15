@@ -14,7 +14,7 @@ const (
 )
 
 type CgroupsQueryer interface {
-	CpuUsage() (float64, error)
+	CPUUsage() (float64, error)
 	MemUsage() (float64, error)
 
 	SetCPUQuota() error

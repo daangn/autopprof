@@ -34,7 +34,7 @@ type cgroupV2 struct {
 
 	cpuQuota float64
 
-	q CpuUsageSnapshotQueuer
+	q cpuUsageSnapshotQueuer
 }
 
 func newCgroupsV2() *cgroupV2 {
@@ -49,7 +49,7 @@ func newCgroupsV2() *cgroupV2 {
 	}
 }
 
-func (c *cgroupV2) CpuUsage() (float64, error) {
+func (c *cgroupV2) CPUUsage() (float64, error) {
 	stat, err := c.stat()
 	if err != nil {
 		return 0, err

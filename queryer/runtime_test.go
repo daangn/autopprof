@@ -25,15 +25,15 @@ func Test_runtimeQuery_GoroutineCount(t *testing.T) {
 		}()
 	}
 
-	addedGoroutineCnt := r.GoroutineCount()
-	if addedGoroutineCnt != initGoroutineCnt+goroutineCnt {
-		t.Errorf("GoroutineCount() = %d; want is %d", addedGoroutineCnt, initGoroutineCnt+1)
+	processingGoroutineCnt := r.GoroutineCount()
+	if processingGoroutineCnt != initGoroutineCnt+goroutineCnt {
+		t.Errorf("GoroutineCount() = %d; want is %d", processingGoroutineCnt, initGoroutineCnt+1)
 	}
 
 	wg.Wait()
 
-	endGoroutineCnt := r.GoroutineCount()
-	if endGoroutineCnt != initGoroutineCnt {
-		t.Errorf("GoroutineCount() = %d; want is %d", endGoroutineCnt, initGoroutineCnt)
+	remainedGoroutineCnt := r.GoroutineCount()
+	if remainedGoroutineCnt != initGoroutineCnt {
+		t.Errorf("GoroutineCount() = %d; want is %d", remainedGoroutineCnt, initGoroutineCnt)
 	}
 }
