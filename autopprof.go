@@ -38,7 +38,7 @@ type autoPprof struct {
 	// goroutineThreshold is the goroutine count threshold to trigger profile.
 	// If the goroutine count is over the threshold, the autopprof will
 	//  report the goroutine profile.
-	// Default: 10000.
+	// Default: 50000.
 	goroutineThreshold int
 
 	// minConsecutiveOverThreshold is the minimum consecutive
