@@ -13,8 +13,9 @@ import (
 const (
 	reportTimeLayout = "2006-01-02T150405.MST"
 
-	cpuCommentFmt = ":rotating_light:[CPU] usage (*%.2f%%*) > threshold (*%.2f%%*)"
-	memCommentFmt = ":rotating_light:[MEM] usage (*%.2f%%*) > threshold (*%.2f%%*)"
+	cpuCommentFmt       = ":rotating_light:[CPU] usage (*%.2f%%*) > threshold (*%.2f%%*)"
+	memCommentFmt       = ":rotating_light:[MEM] usage (*%.2f%%*) > threshold (*%.2f%%*)"
+	goroutineCommentFmt = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
 )
 
 // SlackReporter is the reporter to send the profiling report to the
@@ -73,6 +74,28 @@ func (s *SlackReporter) ReportHeapProfile(
 		now      = time.Now().Format(reportTimeLayout)
 		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(memCommentFmt, mi.UsagePercentage, mi.ThresholdPercentage)
+	)
+	if _, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
+		Reader:         r,
+		Filename:       filename,
+		Title:          filename,
+		InitialComment: comment,
+		Channels:       []string{s.channel},
+	}); err != nil {
+		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
+	}
+	return nil
+}
+
+// ReportGoroutineProfile sends the goroutine profiling data to the Slack.
+func (s *SlackReporter) ReportGoroutineProfile(
+	ctx context.Context, r io.Reader, gi GoroutineInfo,
+) error {
+	hostname, _ := os.Hostname() // Don't care about this error.
+	var (
+		now      = time.Now().Format(reportTimeLayout)
+		filename = fmt.Sprintf(GoroutineProfileFilenameFmt, s.app, hostname, now)
+		comment  = fmt.Sprintf(goroutineCommentFmt, gi.Count, gi.ThresholdCount)
 	)
 	if _, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
 		Reader:         r,

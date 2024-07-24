@@ -9,6 +9,7 @@ import (
 const (
 	defaultCPUThreshold                = 0.75
 	defaultMemThreshold                = 0.75
+	defaultGoroutineThreshold          = 50000
 	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
 	defaultMinConsecutiveOverThreshold = 12 // min 1 minute. (12*5s)
@@ -20,6 +21,8 @@ type Option struct {
 	DisableCPUProf bool
 	// DisableMemProf disables the memory profiling.
 	DisableMemProf bool
+	// DisableGoroutineProf disables the goroutine profiling.
+	DisableGoroutineProf bool
 
 	// CPUThreshold is the cpu usage threshold (between 0 and 1)
 	//  to trigger the cpu profiling.
@@ -33,6 +36,12 @@ type Option struct {
 	//  is higher than this threshold.
 	MemThreshold float64
 
+	// GoroutineThreshold is the goroutine count threshold to trigger the goroutine profiling.
+	//  to trigger the goroutine profiling.
+	// Autopprof will start the goroutine profiling when the goroutine count
+	//  is higher than this threshold.
+	GoroutineThreshold int
+
 	// ReportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
 	// If some profiling is disabled, exclude it.
 	ReportBoth bool
@@ -44,7 +53,7 @@ type Option struct {
 
 // NOTE(mingrammer): testing the validate() is done in autopprof_test.go.
 func (o Option) validate() error {
-	if o.DisableCPUProf && o.DisableMemProf {
+	if o.DisableCPUProf && o.DisableMemProf && o.DisableGoroutineProf {
 		return ErrDisableAllProfiling
 	}
 	if o.CPUThreshold < 0 || o.CPUThreshold > 1 {
@@ -52,6 +61,9 @@ func (o Option) validate() error {
 	}
 	if o.MemThreshold < 0 || o.MemThreshold > 1 {
 		return ErrInvalidMemThreshold
+	}
+	if o.GoroutineThreshold < 0 {
+		return ErrInvalidGoroutineThreshold
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

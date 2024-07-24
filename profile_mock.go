@@ -48,6 +48,21 @@ func (mr *MockprofilerMockRecorder) profileCPU() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "profileCPU", reflect.TypeOf((*Mockprofiler)(nil).profileCPU))
 }
 
+// profileGoroutine mocks base method.
+func (m *Mockprofiler) profileGoroutine() ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "profileGoroutine")
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// profileGoroutine indicates an expected call of profileGoroutine.
+func (mr *MockprofilerMockRecorder) profileGoroutine() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "profileGoroutine", reflect.TypeOf((*Mockprofiler)(nil).profileGoroutine))
+}
+
 // profileHeap mocks base method.
 func (m *Mockprofiler) profileHeap() ([]byte, error) {
 	m.ctrl.T.Helper()

@@ -14,6 +14,8 @@ type profiler interface {
 	profileCPU() ([]byte, error)
 	// profileHeap profiles the heap usage.
 	profileHeap() ([]byte, error)
+	// profileGoroutine profiles the goroutine usage.
+	profileGoroutine() ([]byte, error)
 }
 
 type defaultProfiler struct {
@@ -51,7 +53,21 @@ func (p *defaultProfiler) profileHeap() ([]byte, error) {
 		buf bytes.Buffer
 		w   = bufio.NewWriter(&buf)
 	)
-	if err := pprof.WriteHeapProfile(w); err != nil {
+	if err := pprof.Lookup("heap").WriteTo(w, 0); err != nil {
+		return nil, err
+	}
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (p *defaultProfiler) profileGoroutine() ([]byte, error) {
+	var (
+		buf bytes.Buffer
+		w   = bufio.NewWriter(&buf)
+	)
+	if err := pprof.Lookup("goroutine").WriteTo(w, 0); err != nil {
 		return nil, err
 	}
 	if err := w.Flush(); err != nil {

@@ -1,4 +1,4 @@
-package autopprof
+package queryer
 
 import "time"
 

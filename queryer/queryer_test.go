@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package autopprof
+package queryer
 
 import (
 	"testing"
@@ -9,9 +9,9 @@ import (
 	"github.com/containerd/cgroups"
 )
 
-func TestNewQueryer(t *testing.T) {
+func TestNewCgroupQueryer(t *testing.T) {
 	mode := cgroups.Mode()
-	_, err := newQueryer()
+	_, err := NewCgroupQueryer()
 	if mode == cgroups.Unavailable && err == nil {
 		t.Errorf("newQueryer() = nil, want error")
 	} else if err != nil {

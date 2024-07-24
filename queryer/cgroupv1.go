@@ -1,7 +1,7 @@
 //go:build linux
 // +build linux
 
-package autopprof
+package queryer
 
 import (
 	"bufio"
@@ -45,7 +45,38 @@ func newCgroupsV1() *cgroupV1 {
 	}
 }
 
-func (c *cgroupV1) setCPUQuota() error {
+func (c *cgroupV1) CPUUsage() (float64, error) {
+	stat, err := c.stat()
+	if err != nil {
+		return 0, err
+	}
+	c.snapshotCPUUsage(stat.CPU.Usage.Total) // In nanoseconds.
+
+	// Calculate the usage only if there are enough snapshots.
+	if !c.q.isFull() {
+		return 0, nil
+	}
+
+	s1, s2 := c.q.head(), c.q.tail()
+	delta := time.Duration(s2.usage-s1.usage) * cgroupV1UsageUnit
+	duration := s2.timestamp.Sub(s1.timestamp)
+	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
+}
+
+func (c *cgroupV1) MemUsage() (float64, error) {
+	stat, err := c.stat()
+	if err != nil {
+		return 0, err
+	}
+	var (
+		sm    = stat.Memory
+		usage = sm.Usage.Usage - sm.InactiveFile
+		limit = sm.HierarchicalMemoryLimit
+	)
+	return float64(usage) / float64(limit), nil
+}
+
+func (c *cgroupV1) SetCPUQuota() error {
 	quota, err := c.parseCPU(cgroupV1CPUQuotaFile)
 	if err != nil {
 		return err
@@ -78,37 +109,6 @@ func (c *cgroupV1) stat() (*v1.Metrics, error) {
 		return nil, err
 	}
 	return stat, nil
-}
-
-func (c *cgroupV1) cpuUsage() (float64, error) {
-	stat, err := c.stat()
-	if err != nil {
-		return 0, err
-	}
-	c.snapshotCPUUsage(stat.CPU.Usage.Total) // In nanoseconds.
-
-	// Calculate the usage only if there are enough snapshots.
-	if !c.q.isFull() {
-		return 0, nil
-	}
-
-	s1, s2 := c.q.head(), c.q.tail()
-	delta := time.Duration(s2.usage-s1.usage) * cgroupV1UsageUnit
-	duration := s2.timestamp.Sub(s1.timestamp)
-	return (float64(delta) / float64(duration)) / c.cpuQuota, nil
-}
-
-func (c *cgroupV1) memUsage() (float64, error) {
-	stat, err := c.stat()
-	if err != nil {
-		return 0, err
-	}
-	var (
-		sm    = stat.Memory
-		usage = sm.Usage.Usage - sm.InactiveFile
-		limit = sm.HierarchicalMemoryLimit
-	)
-	return float64(usage) / float64(limit), nil
 }
 
 func (c *cgroupV1) parseCPU(filename string) (int, error) {
