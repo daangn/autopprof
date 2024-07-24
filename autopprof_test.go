@@ -876,6 +876,7 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 				cpuThreshold:   0.5, // 50%.
 				memThreshold:   tc.fields.memThreshold,
 				cgroupQueryer:  mockCgroupsQueryer,
+				runtimeQueryer: mockRuntimeQueryer,
 				profiler:       mockProfiler,
 				reporter:       mockReporter,
 				reportAll:      tc.fields.reportAll,
