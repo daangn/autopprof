@@ -1174,6 +1174,88 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 				)
 			},
 		},
+		{
+			name: "reportAll: true, disableCPUProf: true",
+			fields: fields{
+				watchInterval:      1 * time.Second,
+				goroutineThreshold: 100,
+				reportAll:          true,
+				disableCPUProf:     true,
+				disableMemProf:     false,
+				stopC:              make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 100,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: false",
+			fields: fields{
+				watchInterval:      1 * time.Second,
+				goroutineThreshold: 100,
+				reportAll:          false,
+				disableCPUProf:     false,
+				disableMemProf:     false,
+				stopC:              make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 100,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
