@@ -762,7 +762,7 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 					mockRuntimeQueryer.EXPECT().
 						GoroutineCount().
 						AnyTimes().
-						Return(200, nil),
+						Return(200),
 
 					mockProfiler.EXPECT().
 						profileGoroutine().
@@ -812,7 +812,7 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 					mockRuntimeQueryer.EXPECT().
 						GoroutineCount().
 						AnyTimes().
-						Return(200, nil),
+						Return(200),
 
 					mockProfiler.EXPECT().
 						profileGoroutine().
