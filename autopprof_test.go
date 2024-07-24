@@ -872,16 +872,17 @@ func TestAutoPprof_watchMemUsage_reportBoth(t *testing.T) {
 			mockReporter := report.NewMockReporter(ctrl)
 
 			ap := &autoPprof{
-				watchInterval:  tc.fields.watchInterval,
-				cpuThreshold:   0.5, // 50%.
-				memThreshold:   tc.fields.memThreshold,
-				cgroupQueryer:  mockCgroupsQueryer,
-				runtimeQueryer: mockRuntimeQueryer,
-				profiler:       mockProfiler,
-				reporter:       mockReporter,
-				reportAll:      tc.fields.reportAll,
-				disableCPUProf: tc.fields.disableCPUProf,
-				stopC:          tc.fields.stopC,
+				watchInterval:      tc.fields.watchInterval,
+				cpuThreshold:       0.5, // 50%.
+				memThreshold:       tc.fields.memThreshold,
+				goroutineThreshold: 500,
+				cgroupQueryer:      mockCgroupsQueryer,
+				runtimeQueryer:     mockRuntimeQueryer,
+				profiler:           mockProfiler,
+				reporter:           mockReporter,
+				reportAll:          tc.fields.reportAll,
+				disableCPUProf:     tc.fields.disableCPUProf,
+				stopC:              tc.fields.stopC,
 			}
 
 			tc.mockFunc(mockCgroupsQueryer, mockRuntimeQueryer, mockProfiler, mockReporter)
