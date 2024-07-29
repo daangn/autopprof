@@ -58,9 +58,14 @@ type autoPprof struct {
 	// reporter is the reporter to send the profiling reports.
 	reporter report.Reporter
 
+	// deprecated: use reportAll instead.
 	// reportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
 	// If some profiling is disabled, exclude it.
 	reportBoth bool
+
+	// reportAll sets whether to trigger reports for all profiling types when any threshold is exceeded.
+	// If some profiling is disabled, exclude it.
+	reportAll bool
 
 	// Flags to disable the profiling.
 	disableCPUProf       bool
@@ -191,7 +196,8 @@ func (ap *autoPprof) watchCPUUsage() {
 						"autopprof: failed to report the cpu profile: %w", err,
 					))
 				}
-				if ap.reportBoth && !ap.disableMemProf {
+
+				if (ap.reportBoth || ap.reportAll) && !ap.disableMemProf {
 					memUsage, err := ap.cgroupQueryer.MemUsage()
 					if err != nil {
 						log.Println(err)
@@ -200,6 +206,15 @@ func (ap *autoPprof) watchCPUUsage() {
 					if err := ap.reportHeapProfile(memUsage); err != nil {
 						log.Println(fmt.Errorf(
 							"autopprof: failed to report the heap profile: %w", err,
+						))
+					}
+				}
+
+				if ap.reportAll && !ap.disableGoroutineProf {
+					goroutineCount := ap.runtimeQueryer.GoroutineCount()
+					if err := ap.reportGoroutineProfile(goroutineCount); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the goroutine profile: %w", err,
 						))
 					}
 				}
@@ -268,7 +283,7 @@ func (ap *autoPprof) watchMemUsage() {
 						"autopprof: failed to report the heap profile: %w", err,
 					))
 				}
-				if ap.reportBoth && !ap.disableCPUProf {
+				if (ap.reportBoth || ap.reportAll) && !ap.disableCPUProf {
 					cpuUsage, err := ap.cgroupQueryer.CPUUsage()
 					if err != nil {
 						log.Println(err)
@@ -277,6 +292,15 @@ func (ap *autoPprof) watchMemUsage() {
 					if err := ap.reportCPUProfile(cpuUsage); err != nil {
 						log.Println(fmt.Errorf(
 							"autopprof: failed to report the cpu profile: %w", err,
+						))
+					}
+				}
+
+				if ap.reportAll && !ap.disableGoroutineProf {
+					goroutineCount := ap.runtimeQueryer.GoroutineCount()
+					if err := ap.reportGoroutineProfile(goroutineCount); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the goroutine profile: %w", err,
 						))
 					}
 				}
@@ -341,6 +365,32 @@ func (ap *autoPprof) watchGoroutineCount() {
 					log.Println(fmt.Errorf(
 						"autopprof: failed to report the goroutine profile: %w", err,
 					))
+				}
+
+				if ap.reportAll && !ap.disableCPUProf {
+					cpuUsage, err := ap.cgroupQueryer.CPUUsage()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					if err := ap.reportCPUProfile(cpuUsage); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the cpu profile: %w", err,
+						))
+					}
+				}
+
+				if ap.reportAll && !ap.disableMemProf {
+					memUsage, err := ap.cgroupQueryer.MemUsage()
+					if err != nil {
+						log.Println(err)
+						return
+					}
+					if err := ap.reportHeapProfile(memUsage); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: failed to report the heap profile: %w", err,
+						))
+					}
 				}
 			}
 

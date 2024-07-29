@@ -42,9 +42,14 @@ type Option struct {
 	//  is higher than this threshold.
 	GoroutineThreshold int
 
+	// deprecated: use reportAll instead.
 	// ReportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
 	// If some profiling is disabled, exclude it.
 	ReportBoth bool
+
+	// ReportAll sets whether to trigger reports for all profiling types when any threshold is exceeded.
+	// If some profiling is disabled, exclude it.
+	ReportAll bool
 
 	// Reporter is the reporter to send the profiling report implementing
 	//  the report.Reporter interface.
