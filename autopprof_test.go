@@ -79,9 +79,9 @@ func TestStart(t *testing.T) {
 			opt: Option{
 				Reporter: report.NewSlackReporter(
 					&report.SlackReporterOption{
-						App:     "appname",
-						Token:   "token",
-						Channel: "channel",
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
 					},
 				),
 			},
@@ -93,9 +93,9 @@ func TestStart(t *testing.T) {
 				MemThreshold: 0.5,
 				Reporter: report.NewSlackReporter(
 					&report.SlackReporterOption{
-						App:     "appname",
-						Token:   "token",
-						Channel: "channel",
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
 					},
 				),
 			},
@@ -144,9 +144,9 @@ func TestStop(t *testing.T) {
 					MemThreshold: 0.5,
 					Reporter: report.NewSlackReporter(
 						&report.SlackReporterOption{
-							App:     "appname",
-							Token:   "token",
-							Channel: "channel",
+							App:       "appname",
+							Token:     "token",
+							ChannelID: "channel_id",
 						},
 					),
 				})
@@ -266,10 +266,10 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+			func(_ context.Context, _ io.Reader, _ int, _ report.CPUInfo) error {
 				reported = true
 				return nil
 			},
@@ -329,10 +329,10 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+			func(_ context.Context, _ io.Reader, _ int, _ report.CPUInfo) error {
 				reportedCnt++
 				return nil
 			},
@@ -426,7 +426,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("cpu_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+						ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.CPUInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -444,7 +444,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.2 * 100,
 						}).
@@ -462,7 +462,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 500,
 							Count:          200,
 						}).
@@ -494,7 +494,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("cpu_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+						ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.CPUInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -512,7 +512,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 500,
 							Count:          200,
 						}).
@@ -543,7 +543,7 @@ func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
 						Return([]byte("cpu_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+						ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.CPUInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -617,7 +617,7 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
 				reported = true
@@ -679,7 +679,7 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
@@ -776,7 +776,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -794,7 +794,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("cpu_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+						ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.CPUInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.2 * 100,
 						}).
@@ -812,7 +812,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 500,
 							Count:          200,
 						}).
@@ -844,7 +844,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -862,7 +862,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 500,
 							Count:          200,
 						}).
@@ -894,7 +894,7 @@ func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.6 * 100,
 						}).
@@ -968,7 +968,7 @@ func TestAutoPprof_watchGoroutineCount(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
 				reported = true
@@ -1031,7 +1031,7 @@ func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
 
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().
-		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
 			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
@@ -1129,7 +1129,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 100,
 							Count:          200,
 						}).
@@ -1147,7 +1147,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("cpu_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+						ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.CPUInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.2 * 100,
 						}).
@@ -1165,7 +1165,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.2 * 100,
 						}).
@@ -1197,7 +1197,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 100,
 							Count:          200,
 						}).
@@ -1215,7 +1215,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("mem_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+						ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.MemInfo{
 							ThresholdPercentage: 0.5 * 100,
 							UsagePercentage:     0.2 * 100,
 						}).
@@ -1247,7 +1247,7 @@ func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
 						Return([]byte("goroutine_prof"), nil),
 
 					mockReporter.EXPECT().
-						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any(), report.GoroutineInfo{
 							ThresholdCount: 100,
 							Count:          200,
 						}).
