@@ -21,7 +21,9 @@ const (
 // SlackReporter is the reporter to send the profiling report to the
 // specific Slack channel.
 type SlackReporter struct {
-	app       string
+	app     string
+	channel string
+
 	channelID string
 
 	client *slack.Client
@@ -29,8 +31,13 @@ type SlackReporter struct {
 
 // SlackReporterOption is the option for the Slack reporter.
 type SlackReporterOption struct {
-	App       string
-	Token     string
+	App   string
+	Token string
+	// Deprecated: Use ChannelID instead. Reporting with a channel name is no longer supported because the latest Slack API for file uploads requires a channel ID instead of a channel name.
+	// For more details about the Slack API, refer to: https://api.slack.com/methods/files.completeUploadExternal
+	//
+	// For details about the file upload process: https://api.slack.com/messaging/files#uploading_files
+	Channel   string
 	ChannelID string
 }
 
@@ -38,6 +45,7 @@ type SlackReporterOption struct {
 func NewSlackReporter(opt *SlackReporterOption) *SlackReporter {
 	return &SlackReporter{
 		app:       opt.App,
+		channel:   opt.Channel,
 		channelID: opt.ChannelID,
 		client:    slack.New(opt.Token),
 	}
@@ -53,14 +61,7 @@ func (s *SlackReporter) ReportCPUProfile(
 		filename = fmt.Sprintf(CPUProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(cpuCommentFmt, ci.UsagePercentage, ci.ThresholdPercentage)
 	)
-	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
-		Filename:       filename,
-		FileSize:       size,
-		Title:          filename,
-		InitialComment: comment,
-		Channel:        s.channelID,
-	}); err != nil {
+	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
@@ -76,14 +77,7 @@ func (s *SlackReporter) ReportHeapProfile(
 		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(memCommentFmt, mi.UsagePercentage, mi.ThresholdPercentage)
 	)
-	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
-		Filename:       filename,
-		FileSize:       size,
-		Title:          filename,
-		InitialComment: comment,
-		Channel:        s.channelID,
-	}); err != nil {
+	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
@@ -99,15 +93,30 @@ func (s *SlackReporter) ReportGoroutineProfile(
 		filename = fmt.Sprintf(GoroutineProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(goroutineCommentFmt, gi.Count, gi.ThresholdCount)
 	)
-	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
-		Filename:       filename,
-		FileSize:       size,
-		Title:          filename,
-		InitialComment: comment,
-		Channel:        s.channelID,
-	}); err != nil {
+	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
+}
+
+func (s *SlackReporter) reportProfile(ctx context.Context, r io.Reader, size int, filename, comment string) error {
+	if s.channelID != "" {
+		_, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+			Reader:         r,
+			Filename:       filename,
+			FileSize:       size,
+			Title:          filename,
+			InitialComment: comment,
+			Channel:        s.channelID,
+		})
+		return err
+	}
+	_, err := s.client.UploadFileContext(ctx, slack.FileUploadParameters{
+		Reader:         r,
+		Filename:       filename,
+		Title:          filename,
+		InitialComment: comment,
+		Channels:       []string{s.channel},
+	})
+	return err
 }
