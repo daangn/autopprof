@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -53,8 +54,15 @@ func (s *SlackReporter) ReportCPUProfile(
 		filename = fmt.Sprintf(CPUProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(cpuCommentFmt, ci.UsagePercentage, ci.ThresholdPercentage)
 	)
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("autopprof: 프로파일 파일 읽기 실패: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("autopprof: 프로파일 파일 크기가 0입니다")
+	}
 	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
+		Reader:         bytes.NewReader(data),
 		Filename:       filename,
 		Title:          filename,
 		InitialComment: comment,
@@ -75,8 +83,15 @@ func (s *SlackReporter) ReportHeapProfile(
 		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(memCommentFmt, mi.UsagePercentage, mi.ThresholdPercentage)
 	)
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("autopprof: 프로파일 파일 읽기 실패: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("autopprof: 프로파일 파일 크기가 0입니다")
+	}
 	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
+		Reader:         bytes.NewReader(data),
 		Filename:       filename,
 		Title:          filename,
 		InitialComment: comment,
@@ -97,8 +112,15 @@ func (s *SlackReporter) ReportGoroutineProfile(
 		filename = fmt.Sprintf(GoroutineProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(goroutineCommentFmt, gi.Count, gi.ThresholdCount)
 	)
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return fmt.Errorf("autopprof: 프로파일 파일 읽기 실패: %w", err)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("autopprof: 프로파일 파일 크기가 0입니다")
+	}
 	if _, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-		Reader:         r,
+		Reader:         bytes.NewReader(data),
 		Filename:       filename,
 		Title:          filename,
 		InitialComment: comment,
