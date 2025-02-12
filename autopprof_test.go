@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daangn/autopprof/queryer"
+	"github.com/ethan-k/autopprof/queryer"
 	"github.com/golang/mock/gomock"
 
-	"github.com/daangn/autopprof/report"
+	"github.com/ethan-k/autopprof/report"
 )
 
 func TestStart(t *testing.T) {

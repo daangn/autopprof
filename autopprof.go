@@ -7,11 +7,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/daangn/autopprof/queryer"
+	"github.com/ethan-k/autopprof/queryer"
 	"log"
 	"time"
 
-	"github.com/daangn/autopprof/report"
+	"github.com/ethan-k/autopprof/report"
 )
 
 const (

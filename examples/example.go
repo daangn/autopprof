@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/daangn/autopprof"
-	"github.com/daangn/autopprof/report"
+	"github.com/ethan-k/autopprof"
+	"github.com/ethan-k/autopprof/report"
 )
 
 type mm struct {

@@ -1,10 +1,10 @@
-module github.com/daangn/autopprof/examples
+module github.com/ethan-k/autopprof/examples
 
 go 1.19
 
-replace github.com/daangn/autopprof => ../
+replace github.com/ethan-k/autopprof => ../
 
-require github.com/daangn/autopprof v0.0.0-00010101000000-000000000000
+require github.com/ethan-k/autopprof v0.0.0-00010101000000-000000000000
 
 require (
 	github.com/cilium/ebpf v0.4.0 // indirect
