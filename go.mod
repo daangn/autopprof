@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/containerd/cgroups v1.0.4
 	github.com/golang/mock v1.6.0
-	github.com/slack-go/slack v0.11.3
+	github.com/slack-go/slack v0.16.0
 )
 
 require (
