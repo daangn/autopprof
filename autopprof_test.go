@@ -269,7 +269,7 @@ func TestAutoPprof_watchCPUUsage(t *testing.T) {
 		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.CPUInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
 				reported = true
 				return nil
 			},
@@ -332,7 +332,7 @@ func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
 		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.CPUInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
 				reportedCnt++
 				return nil
 			},
@@ -619,7 +619,7 @@ func TestAutoPprof_watchMemUsage(t *testing.T) {
 	mockReporter.EXPECT().
 		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.MemInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
 				reported = true
 				return nil
 			},
@@ -682,7 +682,7 @@ func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.MemInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
 				reportedCnt++
 				return nil
 			},
@@ -970,7 +970,7 @@ func TestAutoPprof_watchGoroutineCount(t *testing.T) {
 	mockReporter.EXPECT().
 		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.GoroutineInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
 				reported = true
 				return nil
 			},
@@ -1034,7 +1034,7 @@ func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
 		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
 		AnyTimes().
 		DoAndReturn(
-			func(_ context.Context, _ io.Reader, _ int, _ report.GoroutineInfo) error {
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
 				reportedCnt++
 				return nil
 			},
