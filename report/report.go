@@ -24,13 +24,13 @@ const (
 // Reporter is responsible for reporting the profiling report to the destination.
 type Reporter interface {
 	// ReportCPUProfile sends the CPU profiling data to the specific destination.
-	ReportCPUProfile(ctx context.Context, r io.Reader, size int, ci CPUInfo) error
+	ReportCPUProfile(ctx context.Context, r io.Reader, ci CPUInfo) error
 
 	// ReportHeapProfile sends the heap profiling data to the specific destination.
-	ReportHeapProfile(ctx context.Context, r io.Reader, size int, mi MemInfo) error
+	ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error
 
 	// ReportGoroutineProfile sends the goroutine profiling data to the specific destination.
-	ReportGoroutineProfile(ctx context.Context, r io.Reader, size int, gi GoroutineInfo) error
+	ReportGoroutineProfile(ctx context.Context, r io.Reader, gi GoroutineInfo) error
 }
 
 // CPUInfo is the CPU usage information.

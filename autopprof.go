@@ -245,8 +245,7 @@ func (ap *autoPprof) reportCPUProfile(cpuUsage float64) error {
 		UsagePercentage:     cpuUsage * 100,
 	}
 	bReader := bytes.NewReader(b)
-	bSize := len(b)
-	if err := ap.reporter.ReportCPUProfile(ctx, bReader, bSize, ci); err != nil {
+	if err := ap.reporter.ReportCPUProfile(ctx, bReader, ci); err != nil {
 		return err
 	}
 	return nil
@@ -332,8 +331,7 @@ func (ap *autoPprof) reportHeapProfile(memUsage float64) error {
 		UsagePercentage:     memUsage * 100,
 	}
 	bReader := bytes.NewReader(b)
-	bSize := len(b)
-	if err := ap.reporter.ReportHeapProfile(ctx, bReader, bSize, mi); err != nil {
+	if err := ap.reporter.ReportHeapProfile(ctx, bReader, mi); err != nil {
 		return err
 	}
 	return nil
@@ -421,8 +419,7 @@ func (ap *autoPprof) reportGoroutineProfile(goroutineCount int) error {
 		Count:          goroutineCount,
 	}
 	bReader := bytes.NewReader(b)
-	bSize := len(b)
-	if err := ap.reporter.ReportGoroutineProfile(ctx, bReader, bSize, gi); err != nil {
+	if err := ap.reporter.ReportGoroutineProfile(ctx, bReader, gi); err != nil {
 		return err
 	}
 	return nil

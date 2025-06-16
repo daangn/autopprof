@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func NewSlackReporter(opt *SlackReporterOption) *SlackReporter {
 
 // ReportCPUProfile sends the CPU profiling data to the Slack.
 func (s *SlackReporter) ReportCPUProfile(
-	ctx context.Context, r io.Reader, size int, ci CPUInfo,
+	ctx context.Context, r io.Reader, ci CPUInfo,
 ) error {
 	hostname, _ := os.Hostname() // Don't care about this error.
 	var (
@@ -61,7 +62,7 @@ func (s *SlackReporter) ReportCPUProfile(
 		filename = fmt.Sprintf(CPUProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(cpuCommentFmt, ci.UsagePercentage, ci.ThresholdPercentage)
 	)
-	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
+	if err := s.reportProfile(ctx, r, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
@@ -69,7 +70,7 @@ func (s *SlackReporter) ReportCPUProfile(
 
 // ReportHeapProfile sends the heap profiling data to the Slack.
 func (s *SlackReporter) ReportHeapProfile(
-	ctx context.Context, r io.Reader, size int, mi MemInfo,
+	ctx context.Context, r io.Reader, mi MemInfo,
 ) error {
 	hostname, _ := os.Hostname() // Don't care about this error.
 	var (
@@ -77,7 +78,7 @@ func (s *SlackReporter) ReportHeapProfile(
 		filename = fmt.Sprintf(HeapProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(memCommentFmt, mi.UsagePercentage, mi.ThresholdPercentage)
 	)
-	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
+	if err := s.reportProfile(ctx, r, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
@@ -85,7 +86,7 @@ func (s *SlackReporter) ReportHeapProfile(
 
 // ReportGoroutineProfile sends the goroutine profiling data to the Slack.
 func (s *SlackReporter) ReportGoroutineProfile(
-	ctx context.Context, r io.Reader, size int, gi GoroutineInfo,
+	ctx context.Context, r io.Reader, gi GoroutineInfo,
 ) error {
 	hostname, _ := os.Hostname() // Don't care about this error.
 	var (
@@ -93,18 +94,43 @@ func (s *SlackReporter) ReportGoroutineProfile(
 		filename = fmt.Sprintf(GoroutineProfileFilenameFmt, s.app, hostname, now)
 		comment  = fmt.Sprintf(goroutineCommentFmt, gi.Count, gi.ThresholdCount)
 	)
-	if err := s.reportProfile(ctx, r, size, filename, comment); err != nil {
+	if err := s.reportProfile(ctx, r, filename, comment); err != nil {
 		return fmt.Errorf("autopprof: failed to upload a file to Slack channel: %w", err)
 	}
 	return nil
 }
 
-func (s *SlackReporter) reportProfile(ctx context.Context, r io.Reader, size int, filename, comment string) error {
+func (s *SlackReporter) reportProfile(ctx context.Context, r io.Reader, filename, comment string) error {
 	if s.channelID != "" {
+		fileSize := 0
+		reader := r
+		if seeker, ok := r.(io.Seeker); ok {
+			size, err := seeker.Seek(0, io.SeekEnd)
+			if err != nil {
+				return fmt.Errorf("failed to determine reader size by seeking: %w", err)
+			}
+			fileSize = int(size)
+
+			// Reset the stream's cursor to the beginning.
+			// If we don't do this, the Slack client will start reading from the end of the stream
+			// and upload an empty data.
+			_, err = seeker.Seek(0, io.SeekStart)
+			if err != nil {
+				return fmt.Errorf("failed to seek back to start: %w", err)
+			}
+		} else {
+			data, err := io.ReadAll(r)
+			if err != nil {
+				return fmt.Errorf("failed to read data: %w", err)
+			}
+			fileSize = len(data)
+			reader = bytes.NewReader(data)
+		}
+
 		_, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-			Reader:         r,
+			Reader:         reader,
 			Filename:       filename,
-			FileSize:       size,
+			FileSize:       fileSize,
 			Title:          filename,
 			InitialComment: comment,
 			Channel:        s.channelID,

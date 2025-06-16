@@ -36,43 +36,43 @@ func (m *MockReporter) EXPECT() *MockReporterMockRecorder {
 }
 
 // ReportCPUProfile mocks base method.
-func (m *MockReporter) ReportCPUProfile(ctx context.Context, r io.Reader, size int, ci CPUInfo) error {
+func (m *MockReporter) ReportCPUProfile(ctx context.Context, r io.Reader, ci CPUInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReportCPUProfile", ctx, r, size, ci)
+	ret := m.ctrl.Call(m, "ReportCPUProfile", ctx, r, ci)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ReportCPUProfile indicates an expected call of ReportCPUProfile.
-func (mr *MockReporterMockRecorder) ReportCPUProfile(ctx, r, size, ci interface{}) *gomock.Call {
+func (mr *MockReporterMockRecorder) ReportCPUProfile(ctx, r, ci interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportCPUProfile", reflect.TypeOf((*MockReporter)(nil).ReportCPUProfile), ctx, r, size, ci)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportCPUProfile", reflect.TypeOf((*MockReporter)(nil).ReportCPUProfile), ctx, r, ci)
 }
 
 // ReportGoroutineProfile mocks base method.
-func (m *MockReporter) ReportGoroutineProfile(ctx context.Context, r io.Reader, size int, gi GoroutineInfo) error {
+func (m *MockReporter) ReportGoroutineProfile(ctx context.Context, r io.Reader, gi GoroutineInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReportGoroutineProfile", ctx, r, size, gi)
+	ret := m.ctrl.Call(m, "ReportGoroutineProfile", ctx, r, gi)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ReportGoroutineProfile indicates an expected call of ReportGoroutineProfile.
-func (mr *MockReporterMockRecorder) ReportGoroutineProfile(ctx, r, size, gi interface{}) *gomock.Call {
+func (mr *MockReporterMockRecorder) ReportGoroutineProfile(ctx, r, gi interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportGoroutineProfile", reflect.TypeOf((*MockReporter)(nil).ReportGoroutineProfile), ctx, r, size, gi)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportGoroutineProfile", reflect.TypeOf((*MockReporter)(nil).ReportGoroutineProfile), ctx, r, gi)
 }
 
 // ReportHeapProfile mocks base method.
-func (m *MockReporter) ReportHeapProfile(ctx context.Context, r io.Reader, size int, mi MemInfo) error {
+func (m *MockReporter) ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReportHeapProfile", ctx, r, size, mi)
+	ret := m.ctrl.Call(m, "ReportHeapProfile", ctx, r, mi)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ReportHeapProfile indicates an expected call of ReportHeapProfile.
-func (mr *MockReporterMockRecorder) ReportHeapProfile(ctx, r, size, mi interface{}) *gomock.Call {
+func (mr *MockReporterMockRecorder) ReportHeapProfile(ctx, r, mi interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportHeapProfile", reflect.TypeOf((*MockReporter)(nil).ReportHeapProfile), ctx, r, size, mi)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportHeapProfile", reflect.TypeOf((*MockReporter)(nil).ReportHeapProfile), ctx, r, mi)
 }
