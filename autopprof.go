@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/daangn/autopprof/queryer"
 	"log"
 	"time"
 
+	"github.com/daangn/autopprof/queryer"
 	"github.com/daangn/autopprof/report"
 )
 

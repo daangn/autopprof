@@ -18,11 +18,13 @@ type mm struct {
 
 func main() {
 	err := autopprof.Start(autopprof.Option{
+		CPUThreshold: 0.8, // Default: 0.75.
+		MemThreshold: 0.8, // Default: 0.75.
 		Reporter: report.NewSlackReporter(
 			&report.SlackReporterOption{
-				App:     "YOUR_APP_NAME",
-				Token:   "YOUR_TOKEN_HERE",
-				Channel: "#REPORT_CHANNEL",
+				App:       "YOUR_APP_NAME",
+				Token:     "YOUR_TOKEN_HERE",
+				ChannelID: "REPORT_CHANNEL_ID",
 			},
 		),
 	})

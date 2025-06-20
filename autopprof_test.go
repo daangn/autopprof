@@ -79,9 +79,9 @@ func TestStart(t *testing.T) {
 			opt: Option{
 				Reporter: report.NewSlackReporter(
 					&report.SlackReporterOption{
-						App:     "appname",
-						Token:   "token",
-						Channel: "channel",
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
 					},
 				),
 			},
@@ -93,9 +93,9 @@ func TestStart(t *testing.T) {
 				MemThreshold: 0.5,
 				Reporter: report.NewSlackReporter(
 					&report.SlackReporterOption{
-						App:     "appname",
-						Token:   "token",
-						Channel: "channel",
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
 					},
 				),
 			},
@@ -144,9 +144,9 @@ func TestStop(t *testing.T) {
 					MemThreshold: 0.5,
 					Reporter: report.NewSlackReporter(
 						&report.SlackReporterOption{
-							App:     "appname",
-							Token:   "token",
-							Channel: "channel",
+							App:       "appname",
+							Token:     "token",
+							ChannelID: "channel_id",
 						},
 					),
 				})
