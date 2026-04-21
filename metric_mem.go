@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	MetricNameMem = "mem"
+
 	heapProfileFilenameFmt = "pprof.%s.%s.alloc_objects.alloc_space.inuse_objects.inuse_space.%s.pprof"
 	memCommentFmt          = ":rotating_light:[MEM] usage (*%.2f%%*) > threshold (*%.2f%%*)"
 )

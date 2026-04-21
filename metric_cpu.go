@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	MetricNameCPU = "cpu"
+
 	cpuProfileFilenameFmt = "pprof.%s.%s.samples.cpu.%s.pprof"
 	cpuCommentFmt         = ":rotating_light:[CPU] usage (*%.2f%%*) > threshold (*%.2f%%*)"
 )

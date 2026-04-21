@@ -13,14 +13,6 @@ import (
 
 const reportTimeLayout = "2006-01-02T150405.MST"
 
-// Built-in Metric names. Exported so Reporter implementations can
-// switch on ReportInfo.MetricName without string literals.
-const (
-	MetricNameCPU       = "cpu"
-	MetricNameMem       = "mem"
-	MetricNameGoroutine = "goroutine"
-)
-
 func hostnameSafe() string {
 	h, _ := os.Hostname()
 	return h

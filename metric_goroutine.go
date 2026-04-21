@@ -11,6 +11,8 @@ import (
 )
 
 const (
+	MetricNameGoroutine = "goroutine"
+
 	goroutineProfileFilenameFmt = "pprof.%s.%s.goroutine.%s.pprof"
 	goroutineCommentFmt         = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
 )
