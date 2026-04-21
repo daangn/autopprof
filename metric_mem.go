@@ -30,7 +30,7 @@ func (m *memMetric) Interval() time.Duration { return 0 }
 func (m *memMetric) Query() (float64, error) { return m.cg.MemUsage() }
 
 func (m *memMetric) Collect(value float64) (CollectResult, error) {
-	return collectBuiltIn(
+	return collectProfile(
 		m.app, heapProfileFilenameFmt,
 		m.p.profileHeap,
 		fmt.Sprintf(memCommentFmt, value*100, m.threshold*100),

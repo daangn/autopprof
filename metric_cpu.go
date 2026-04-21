@@ -30,7 +30,7 @@ func (m *cpuMetric) Interval() time.Duration { return 0 }
 func (m *cpuMetric) Query() (float64, error) { return m.cg.CPUUsage() }
 
 func (m *cpuMetric) Collect(value float64) (CollectResult, error) {
-	return collectBuiltIn(
+	return collectProfile(
 		m.app, cpuProfileFilenameFmt,
 		m.p.profileCPU,
 		fmt.Sprintf(cpuCommentFmt, value*100, m.threshold*100),

@@ -35,7 +35,7 @@ func (m *goroutineMetric) Query() (float64, error) {
 }
 
 func (m *goroutineMetric) Collect(value float64) (CollectResult, error) {
-	return collectBuiltIn(
+	return collectProfile(
 		m.app, goroutineProfileFilenameFmt,
 		m.p.profileGoroutine,
 		fmt.Sprintf(goroutineCommentFmt, int(value), m.threshold),

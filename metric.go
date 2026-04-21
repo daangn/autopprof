@@ -1,9 +1,14 @@
 package autopprof
 
 import (
+	"bytes"
+	"fmt"
 	"io"
+	"os"
 	"time"
 )
+
+const reportTimeLayout = "2006-01-02T150405.MST"
 
 // CollectResult is the payload Metric.Collect hands to autopprof.
 // Reader == nil means "handled internally, skip the Reporter call"
@@ -83,4 +88,45 @@ func validateMetric(m Metric) error {
 		return ErrInvalidMetric
 	}
 	return nil
+}
+
+func hostnameSafe() string {
+	h, _ := os.Hostname()
+	return h
+}
+
+func collectProfile(
+	app, filenameFmt string,
+	profile func() ([]byte, error),
+	comment string,
+) (CollectResult, error) {
+	b, err := profile()
+	if err != nil {
+		return CollectResult{}, err
+	}
+	now := time.Now().Format(reportTimeLayout)
+	return CollectResult{
+		Reader:   bytes.NewReader(b),
+		Filename: fmt.Sprintf(filenameFmt, app, hostnameSafe(), now),
+		Comment:  comment,
+	}, nil
+}
+
+var _ io.Reader = (*bytes.Reader)(nil)
+
+// defaultFilename is used when Collect returns an empty Filename. The
+// ".bin" extension signals "opaque bytes" to Reporter implementations
+// that don't recognize the metric name.
+func defaultFilename(metricName string) string {
+	return fmt.Sprintf(
+		"%s.%s.%s.bin",
+		metricName, hostnameSafe(), time.Now().Format(reportTimeLayout),
+	)
+}
+
+func defaultComment(metricName string, value, threshold float64) string {
+	return fmt.Sprintf(
+		":rotating_light:[%s] value=%.2f threshold=%.2f",
+		metricName, value, threshold,
+	)
 }
