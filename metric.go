@@ -23,12 +23,12 @@ type CollectResult struct {
 	Comment  string
 }
 
-// Metric is the unified abstraction for every threshold-triggered data
-// collection autopprof performs. CPU, memory, and goroutine-count
+// Metric is the unified abstraction for every threshold-triggered
+// data collection autopprof performs. CPU, memory, and goroutine-count
 // watchers are pre-defined Metric implementations built from Option's
 // threshold fields at Start time. Users register additional Metrics
-// via Option.Metrics or the package-level Register/Unregister
-// functions.
+// via Option.Metrics or autopprof.Register. All watchers run until
+// Stop.
 //
 // Thread-safety: for user-registered Metrics, autopprof only calls
 // Query and Collect from that Metric's own watcher goroutine, so

@@ -56,9 +56,6 @@ type Option struct {
 
 	// Metrics are user-defined Metrics registered at Start. Additional
 	// metrics can be added later via autopprof.Register.
-	//
-	// Names "cpu", "mem", and "goroutine" are reserved for the built-in
-	// metrics and cannot be used here.
 	Metrics []Metric
 }
 

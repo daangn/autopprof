@@ -14,8 +14,8 @@ import (
 
 const reportTimeLayout = "2006-01-02T150405.MST"
 
-// Built-in Metric names. These are reserved — users cannot register
-// a Metric with one of these names.
+// Built-in Metric names. Exported so external Reporter implementations
+// can switch on ReportInfo.MetricName without string literals.
 const (
 	MetricNameCPU       = "cpu"
 	MetricNameMem       = "mem"
@@ -47,10 +47,9 @@ func hostnameSafe() string {
 
 // collectBuiltIn is the shared shape of Collect for built-in metrics.
 // It runs the profiler function, wraps the bytes in a reader, and
-// assembles the filename (via the legacy report.XxxProfileFilenameFmt
-// template) plus the comment. Having this helper keeps cpuMetric /
-// memMetric / goroutineMetric's Collect thin so future built-ins (io,
-// disk, …) slot in without duplicating the boilerplate.
+// assembles the filename (using the per-metric format) plus the
+// comment, keeping cpuMetric / memMetric / goroutineMetric's Collect
+// thin.
 func collectBuiltIn(
 	app, filenameFmt string,
 	profile func() ([]byte, error),

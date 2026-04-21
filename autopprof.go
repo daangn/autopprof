@@ -42,11 +42,7 @@ type autoPprof struct {
 	profiler       profiler
 
 	// cascadedRunners holds only the built-in metrics so cascadeBuiltIn
-	// can iterate them. User-registered metrics are *not* tracked by
-	// autoPprof — Register returns a cancel closure that owns the
-	// watcher's stopC, and ap.stopC takes care of the global shutdown
-	// path through the watcher's select.
-	metricsMu       sync.Mutex
+	// can iterate them. Populated during Start and thereafter read-only
 	cascadedRunners map[string]*metricRunner
 
 	// wg tracks every live watcher goroutine (built-in and custom) so
@@ -79,10 +75,9 @@ type metricRunner struct {
 var globalAp *autoPprof
 
 // Start configures and runs the autopprof process. Call it once at
-// startup; a second Start replaces the previous instance's pointer
-// but the previous watchers keep running until they observe their
-// own stopC (i.e. it is the caller's responsibility not to call
-// Start concurrently with itself or Stop).
+// process startup. Start/Stop/Register are not guarded against
+// concurrent use — callers should not invoke them from multiple
+// goroutines.
 func Start(opt Option) error {
 	cgroupQryer, err := queryer.NewCgroupQueryer()
 	if err != nil {
@@ -210,14 +205,11 @@ func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 }
 
 // registerBuiltIn installs a pre-defined Metric into cascadedRunners
-// and spawns its watcher goroutine.
+// and spawns its watcher goroutine. Called only from Start, so the
+// map write needs no synchronization.
 func (ap *autoPprof) registerBuiltIn(m Metric) {
 	runner := newRunner(m, ap.watchInterval)
-
-	ap.metricsMu.Lock()
 	ap.cascadedRunners[runner.name] = runner
-	ap.metricsMu.Unlock()
-
 	ap.wg.Add(1)
 	go func() {
 		defer ap.wg.Done()
@@ -226,23 +218,18 @@ func (ap *autoPprof) registerBuiltIn(m Metric) {
 }
 
 // registerMetric spawns a watcher for a user-registered Metric.
-// The stopC check under metricsMu ensures a watcher is never spawned
-// after stop() has closed ap.stopC, which would panic when wg.Add(1)
-// races with stop()'s wg.Wait().
+// Callers must not invoke this concurrently with Stop (the stopC
+// non-blocking check gives a best-effort ErrNotStarted when Stop
+// has already fired, but is not a race-free guard).
 func (ap *autoPprof) registerMetric(m Metric) error {
 	if err := validateMetric(m); err != nil {
 		return err
 	}
-
-	ap.metricsMu.Lock()
-	defer ap.metricsMu.Unlock()
-
 	select {
 	case <-ap.stopC:
 		return ErrNotStarted
 	default:
 	}
-
 	runner := newRunner(m, ap.watchInterval)
 	ap.wg.Add(1)
 	go func() {
@@ -350,25 +337,15 @@ func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 // cascadeBuiltIn implements the ReportAll cascade: when any built-in
 // metric breaches, report the other built-in metrics too. Only
 // built-in metrics participate (custom metrics stay independent).
-// Targets are snapshotted under metricsMu and all I/O happens outside
-// the lock so a slow profileCPU / Slack upload cannot block
-// Register / Stop.
+// cascadedRunners is read-only after Start, so no lock is needed.
 func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	if !ap.reportAll {
 		return
 	}
-
-	ap.metricsMu.Lock()
-	targets := make([]*metricRunner, 0, len(ap.cascadedRunners))
 	for name, r := range ap.cascadedRunners {
 		if name == triggered {
 			continue
 		}
-		targets = append(targets, r)
-	}
-	ap.metricsMu.Unlock()
-
-	for _, r := range targets {
 		value, err := r.metric.Query()
 		if err != nil {
 			log.Println(fmt.Errorf(
@@ -384,22 +361,12 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	}
 }
 
-// stop shuts down every watcher and blocks until they exit. Guarded
-// by sync.Once so double-Stop is safe. wg.Wait runs last so Stop()
-// doesn't return until every pprof.StartCPUProfile has unwound.
-//
-// close(ap.stopC) happens *under* metricsMu so registerMetric's
-// `select <-ap.stopC` check is load-bearing: a Register that races
-// with Stop either acquires the lock first and spawns its watcher
-// (which Stop then waits for), or acquires the lock after Stop and
-// observes the closed channel, returning ErrNotStarted without
-// touching wg. wg.Add therefore never interleaves with wg.Wait.
+// stop shuts down every watcher and blocks until they exit. sync.Once
+// keeps double-Stop safe, wg.Wait ensures Stop() doesn't return until
+// every pprof.StartCPUProfile has unwound.
 func (ap *autoPprof) stop() {
 	ap.stopOnce.Do(func() {
-		ap.metricsMu.Lock()
 		close(ap.stopC)
-		ap.metricsMu.Unlock()
-
 		ap.wg.Wait()
 	})
 }
