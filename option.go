@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	defaultApp                         = "autopprof"
 	defaultCPUThreshold                = 0.75
 	defaultMemThreshold                = 0.75
 	defaultGoroutineThreshold          = 50000
@@ -49,7 +50,7 @@ type Option struct {
 	Reporter report.Reporter
 
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
-	// "<app>" segment. If left empty, the app segment is omitted.
+	// "<app>" segment. Defaults to "autopprof" when left empty.
 	App string
 
 	// Metrics are user-defined Metrics registered at Start. Additional

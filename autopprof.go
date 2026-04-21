@@ -73,12 +73,16 @@ func Start(opt Option) error {
 		return err
 	}
 
+	app := opt.App
+	if app == "" {
+		app = defaultApp
+	}
 	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
 		watchInterval:               defaultWatchInterval,
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
 		reporter:                    opt.Reporter,
-		app:                         opt.App,
+		app:                         app,
 		reportAll:                   opt.ReportAll,
 		disableCPUProf:              opt.DisableCPUProf,
 		disableMemProf:              opt.DisableMemProf,

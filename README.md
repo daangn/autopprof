@@ -130,7 +130,7 @@ go get github.com/daangn/autopprof/v2
 | v1 | v2 |
 |---|---|
 | `ReportBoth bool` | **Removed.** Use `ReportAll bool`. |
-| *(n/a)* | `App string` — the `"<app>"` segment of built-in filenames. |
+| *(n/a)* | `App string` — the `"<app>"` segment of built-in filenames. Defaults to `"autopprof"` when empty. |
 | *(n/a)* | `Metrics []Metric` — user-defined metrics to register at `Start`. |
 
 All other fields (`CPUThreshold`, `MemThreshold`, `GoroutineThreshold`,
