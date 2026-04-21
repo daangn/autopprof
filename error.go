@@ -19,23 +19,10 @@ var (
 	ErrNilReporter         = errors.New("autopprof: Reporter can't be nil")
 	ErrDisableAllProfiling = errors.New("autopprof: all profiling is disabled")
 
-	// Metric-related errors introduced by the unified Metric API.
 	ErrInvalidMetric = errors.New(
 		"autopprof: metric is invalid (nil, empty name, negative threshold/interval, or nil query/collect)",
 	)
-	ErrReservedMetricName = errors.New(
-		"autopprof: metric name is reserved (cpu/mem/goroutine)",
-	)
-	ErrMetricAlreadyRegistered = errors.New(
-		"autopprof: metric with the given name is already registered",
-	)
-	ErrMetricNotRegistered = errors.New(
-		"autopprof: metric with the given name is not registered",
-	)
-	ErrCannotUnregisterBuiltIn = errors.New(
-		"autopprof: built-in metrics (cpu/mem/goroutine) cannot be unregistered",
-	)
 	ErrNotStarted = errors.New(
-		"autopprof: Start() must be called before Register/Unregister",
+		"autopprof: Start() must be called before Register",
 	)
 )

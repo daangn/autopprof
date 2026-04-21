@@ -84,7 +84,6 @@ func main() {
 	)); err != nil {
 		log.Fatalln("Register(e2e_counter):", err)
 	}
-	defer autopprof.Unregister("e2e_counter")
 
 	log.Printf("autopprof started (app=%q, duration=%s)", app, duration)
 	log.Println("generating load: CPU burn, memory inflation, goroutine spawn, custom counter spike")

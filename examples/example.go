@@ -80,7 +80,6 @@ func main() {
 	if err := autopprof.Register(q); err != nil {
 		log.Println("Register queue metric:", err)
 	}
-	defer autopprof.Unregister(q.Name())
 
 	// (C) Ad-hoc Metric via NewMetric — no custom struct needed.
 	// Watches the process's goroutine count and dumps a full
@@ -104,7 +103,6 @@ func main() {
 			}, nil
 		},
 	))
-	defer autopprof.Unregister("goroutine_blocked")
 
 	eatMemory()
 

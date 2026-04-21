@@ -83,19 +83,10 @@ func (o Option) validate() error {
 		return ErrNilReporter
 	}
 
-	seen := make(map[string]struct{}, len(o.Metrics))
 	for _, m := range o.Metrics {
 		if err := validateMetric(m); err != nil {
 			return err
 		}
-		name := m.Name()
-		if _, reserved := reservedMetricNames.Load(name); reserved {
-			return ErrReservedMetricName
-		}
-		if _, dup := seen[name]; dup {
-			return ErrInvalidMetric
-		}
-		seen[name] = struct{}{}
 	}
 	return nil
 }

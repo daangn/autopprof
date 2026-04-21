@@ -18,10 +18,10 @@ const (
 	reportTimeout = 5 * time.Second
 )
 
-// autoPprof is the internal singleton holding all live Metric watchers.
-// The unified Metric interface lets CPU / Mem / Goroutine and any
-// user-registered metric share one watch loop, one debounce counter
-// per metric, and one Reporter path.
+// autoPprof is the internal singleton holding every live Metric
+// watcher. The unified Metric interface lets CPU / Mem / Goroutine
+// and any user-registered metric share one watch loop, one debounce
+// counter per metric, and one Reporter path.
 type autoPprof struct {
 	watchInterval               time.Duration
 	minConsecutiveOverThreshold int
@@ -41,17 +41,17 @@ type autoPprof struct {
 	runtimeQueryer queryer.RuntimeQueryer
 	profiler       profiler
 
-	// metricsMu guards only the metrics map: Register/Unregister
-	// insert and delete, cascadeBuiltIn snapshots the target list,
-	// stop drains the map. Work *outside* the map (Query, Collect,
-	// Reporter.Report, pprof.StartCPUProfile) runs without the lock;
-	// the cgroup queryer and profiler protect their own shared state
-	// internally.
-	metricsMu sync.Mutex
-	metrics   map[string]*metricRunner
+	// cascadedRunners holds only the built-in metrics so cascadeBuiltIn
+	// can iterate them. User-registered metrics are *not* tracked by
+	// autoPprof — Register returns a cancel closure that owns the
+	// watcher's stopC, and ap.stopC takes care of the global shutdown
+	// path through the watcher's select.
+	metricsMu       sync.Mutex
+	cascadedRunners map[string]*metricRunner
 
-	// wg tracks every live watcher goroutine so Stop() blocks until
-	// in-flight pprof work (CPU profiling can run up to ~10s) unwinds.
+	// wg tracks every live watcher goroutine (built-in and custom) so
+	// Stop() blocks until in-flight pprof work (CPU profiling runs up
+	// to ~10s) unwinds.
 	wg sync.WaitGroup
 
 	// stopOnce guards against double close of stopC / wg.Wait.
@@ -62,25 +62,15 @@ type autoPprof struct {
 }
 
 // metricRunner wraps a Metric with the runtime bookkeeping for its
-// watcher goroutine.
-//
-// The underlying Metric implementations protect their own shared
-// state: cgroup queryer has qMu for its CPU snapshot queue, profiler
-// has cpuMu around pprof.StartCPUProfile. That keeps the built-in
+// watcher goroutine. The underlying Metric implementations protect
+// their own shared state: cgroup queryer has qMu for its CPU snapshot
+// queue, profiler has cpuMu around pprof.StartCPUProfile. That keeps
 // concurrency invariants at the source and lets this layer stay thin.
 type metricRunner struct {
 	metric    Metric
 	name      string        // cached m.Name() at registration
 	threshold float64       // cached m.Threshold() at registration
 	interval  time.Duration // cached m.Interval() (0 resolved to global)
-	builtIn   bool
-
-	// stopC stops just this metric (via Unregister) without affecting
-	// the rest of the instance. Only one code path ever closes it —
-	// Unregister removes the metric from the map before closing,
-	// stop() iterates the map under metricsMu — so double-close is
-	// structurally impossible.
-	stopC chan struct{}
 }
 
 // globalAp holds the current running autoPprof instance, or nil when
@@ -119,7 +109,7 @@ func Start(opt Option) error {
 		cgroupQueryer:               cgroupQryer,
 		runtimeQueryer:              runtimeQryer,
 		profiler:                    profr,
-		metrics:                     make(map[string]*metricRunner),
+		cascadedRunners:             make(map[string]*metricRunner),
 		stopC:                       make(chan struct{}),
 	}
 	if !ap.disableCPUProf {
@@ -148,28 +138,14 @@ func Stop() {
 	globalAp = nil
 }
 
-// Register adds a user Metric to the running autopprof instance.
-// Must be called after Start.
-//
-// Returns:
-//   - ErrNotStarted                     if Start has not been called.
-//   - ErrInvalidMetric / ErrReservedMetricName / ErrMetricAlreadyRegistered
-//     for validation failures.
+// Register adds a user Metric to the running autopprof instance. The
+// metric's watcher runs until autopprof.Stop is called.
+// Must be called after Start; otherwise returns ErrNotStarted.
 func Register(m Metric) error {
 	if globalAp == nil {
 		return ErrNotStarted
 	}
 	return globalAp.registerMetric(m)
-}
-
-// Unregister removes a user Metric by name and stops its watcher.
-// Built-in metrics (cpu/mem/goroutine) return ErrCannotUnregisterBuiltIn;
-// unknown names return ErrMetricNotRegistered.
-func Unregister(name string) error {
-	if globalAp == nil {
-		return ErrNotStarted
-	}
-	return globalAp.unregisterMetric(name)
 }
 
 // loadCPUQuota resolves CPU limits for the container. If the cgroup
@@ -233,37 +209,29 @@ func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 	}
 }
 
-// registerBuiltIn installs a pre-defined Metric. It also records the
-// name in the package-level reservedMetricNames so user Register calls
-// can't collide — this keeps reservation logic in lockstep with the
-// set of built-in metrics we actually expose.
+// registerBuiltIn installs a pre-defined Metric into cascadedRunners
+// and spawns its watcher goroutine.
 func (ap *autoPprof) registerBuiltIn(m Metric) {
-	reservedMetricNames.Store(m.Name(), struct{}{})
+	runner := newRunner(m, ap.watchInterval)
 
 	ap.metricsMu.Lock()
-	defer ap.metricsMu.Unlock()
-
-	runner := newRunner(m, true, ap.watchInterval)
-	ap.metrics[runner.name] = runner
+	ap.cascadedRunners[runner.name] = runner
+	ap.metricsMu.Unlock()
 
 	ap.wg.Add(1)
 	go func() {
 		defer ap.wg.Done()
-		ap.watchMetric(runner)
+		ap.watchMetric(runner, true)
 	}()
 }
 
-// registerMetric handles user-initiated registration (both Option.Metrics
-// and autopprof.Register). The stopC check under metricsMu ensures a
-// watcher is never spawned after stop() has closed the channel, which
-// would panic when wg.Add(1) races with stop()'s wg.Wait().
+// registerMetric spawns a watcher for a user-registered Metric.
+// The stopC check under metricsMu ensures a watcher is never spawned
+// after stop() has closed ap.stopC, which would panic when wg.Add(1)
+// races with stop()'s wg.Wait().
 func (ap *autoPprof) registerMetric(m Metric) error {
 	if err := validateMetric(m); err != nil {
 		return err
-	}
-	name := m.Name()
-	if _, reserved := reservedMetricNames.Load(name); reserved {
-		return ErrReservedMetricName
 	}
 
 	ap.metricsMu.Lock()
@@ -275,58 +243,19 @@ func (ap *autoPprof) registerMetric(m Metric) error {
 	default:
 	}
 
-	if _, exists := ap.metrics[name]; exists {
-		return ErrMetricAlreadyRegistered
-	}
-
-	runner := newRunner(m, false, ap.watchInterval)
-	ap.metrics[name] = runner
-
+	runner := newRunner(m, ap.watchInterval)
 	ap.wg.Add(1)
 	go func() {
 		defer ap.wg.Done()
-		ap.watchMetric(runner)
+		ap.watchMetric(runner, false)
 	}()
 	return nil
-}
-
-// unregisterMetric deletes a user Metric from the map and signals its
-// watcher to exit. The stopC close happens outside metricsMu so we
-// don't hold the lock across the watcher's shutdown.
-func (ap *autoPprof) unregisterMetric(name string) error {
-	ap.metricsMu.Lock()
-	r, ok := ap.metrics[name]
-	if !ok {
-		ap.metricsMu.Unlock()
-		return ErrMetricNotRegistered
-	}
-	if r.builtIn {
-		ap.metricsMu.Unlock()
-		return ErrCannotUnregisterBuiltIn
-	}
-	delete(ap.metrics, name)
-	ap.metricsMu.Unlock()
-
-	close(r.stopC)
-	return nil
-}
-
-// removeFromMapIfPresent is called by a watcher goroutine when it
-// exits due to a Query error. We only drop *user* metrics so the
-// caller can re-Register the same name; built-in entries stay so
-// Start/Stop semantics remain well-defined.
-func (ap *autoPprof) removeFromMapIfPresent(name string) {
-	ap.metricsMu.Lock()
-	defer ap.metricsMu.Unlock()
-	if r, ok := ap.metrics[name]; ok && !r.builtIn {
-		delete(ap.metrics, name)
-	}
 }
 
 // newRunner caches the Metric's meta values at registration time so
 // the watch loop can rely on stable name/threshold/interval even if a
 // user's implementation mutates its return values later.
-func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *metricRunner {
+func newRunner(m Metric, globalInterval time.Duration) *metricRunner {
 	interval := m.Interval()
 	if interval == 0 {
 		interval = globalInterval
@@ -336,8 +265,6 @@ func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *metricRunn
 		name:      m.Name(),
 		threshold: m.Threshold(),
 		interval:  interval,
-		builtIn:   builtIn,
-		stopC:     make(chan struct{}),
 	}
 }
 
@@ -347,7 +274,7 @@ func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *metricRunn
 // tick above threshold, suppress subsequent ticks until either the
 // counter resets (drops below threshold) or reaches
 // minConsecutiveOverThreshold at which point it wraps around to 0.
-func (ap *autoPprof) watchMetric(runner *metricRunner) {
+func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 
@@ -360,10 +287,6 @@ func (ap *autoPprof) watchMetric(runner *metricRunner) {
 				log.Println(fmt.Errorf(
 					"autopprof: metric %q query failed: %w", runner.name, err,
 				))
-				// Let callers re-Register the same name after a transient
-				// failure instead of leaving a "zombie" entry that
-				// permanently shadows the name.
-				ap.removeFromMapIfPresent(runner.name)
 				return
 			}
 			if value < runner.threshold {
@@ -376,9 +299,7 @@ func (ap *autoPprof) watchMetric(runner *metricRunner) {
 						"autopprof: metric %q report failed: %w", runner.name, err,
 					))
 				}
-				// Custom metrics don't cascade — only the three
-				// built-in metrics participate in ReportAll.
-				if runner.builtIn {
+				if isBuiltin {
 					ap.cascadeBuiltIn(runner.name)
 				}
 			}
@@ -386,8 +307,6 @@ func (ap *autoPprof) watchMetric(runner *metricRunner) {
 			if cnt >= ap.minConsecutiveOverThreshold {
 				cnt = 0
 			}
-		case <-runner.stopC:
-			return
 		case <-ap.stopC:
 			return
 		}
@@ -433,16 +352,16 @@ func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 // built-in metrics participate (custom metrics stay independent).
 // Targets are snapshotted under metricsMu and all I/O happens outside
 // the lock so a slow profileCPU / Slack upload cannot block
-// Register / Unregister / Stop.
+// Register / Stop.
 func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	if !ap.reportAll {
 		return
 	}
 
 	ap.metricsMu.Lock()
-	targets := make([]*metricRunner, 0, len(ap.metrics))
-	for name, r := range ap.metrics {
-		if !r.builtIn || name == triggered {
+	targets := make([]*metricRunner, 0, len(ap.cascadedRunners))
+	for name, r := range ap.cascadedRunners {
+		if name == triggered {
 			continue
 		}
 		targets = append(targets, r)
@@ -465,9 +384,9 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	}
 }
 
-// stop shuts down every watcher and blocks until they exit. Guarded by
-// sync.Once so double-Stop is safe. wg.Wait runs last so Stop() doesn't
-// return until every pprof.StartCPUProfile has unwound.
+// stop shuts down every watcher and blocks until they exit. Guarded
+// by sync.Once so double-Stop is safe. wg.Wait runs last so Stop()
+// doesn't return until every pprof.StartCPUProfile has unwound.
 //
 // close(ap.stopC) happens *under* metricsMu so registerMetric's
 // `select <-ap.stopC` check is load-bearing: a Register that races
@@ -479,10 +398,6 @@ func (ap *autoPprof) stop() {
 	ap.stopOnce.Do(func() {
 		ap.metricsMu.Lock()
 		close(ap.stopC)
-		for name, r := range ap.metrics {
-			close(r.stopC)
-			delete(ap.metrics, name)
-		}
 		ap.metricsMu.Unlock()
 
 		ap.wg.Wait()

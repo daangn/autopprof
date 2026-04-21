@@ -102,12 +102,6 @@ func TestOption_validate(t *testing.T) {
 		{"negative interval",
 			Option{Reporter: stub, Metrics: []Metric{&fakeMetric{nameVal: "x", thresholdVal: 1, intervalVal: -time.Second}}},
 			ErrInvalidMetric},
-		{"duplicate names",
-			Option{Reporter: stub, Metrics: []Metric{
-				&fakeMetric{nameVal: "dup", thresholdVal: 1},
-				&fakeMetric{nameVal: "dup", thresholdVal: 1},
-			}},
-			ErrInvalidMetric},
 		{"valid custom metric",
 			Option{Reporter: stub, Metrics: []Metric{validMetric}},
 			nil},
@@ -121,32 +115,6 @@ func TestOption_validate(t *testing.T) {
 	}
 }
 
-// Reserved names are populated at Start time. We exercise this from
-// within the registerBuiltIn code path via a minimal autoPprof setup
-// instead of calling Start() (which requires a real cgroup env).
-func TestOption_validate_reservedName(t *testing.T) {
-	// Prime the reservedMetricNames as registerBuiltIn would.
-	reservedMetricNames.Store("cpu", struct{}{})
-	reservedMetricNames.Store("mem", struct{}{})
-	reservedMetricNames.Store("goroutine", struct{}{})
-	t.Cleanup(func() {
-		reservedMetricNames.Delete("cpu")
-		reservedMetricNames.Delete("mem")
-		reservedMetricNames.Delete("goroutine")
-	})
-
-	opt := Option{
-		Reporter: report.NewMockReporter(gomock.NewController(t)),
-		Metrics: []Metric{&fakeMetric{
-			nameVal: "cpu", thresholdVal: 1,
-			queryFn:   func() (float64, error) { return 0, nil },
-			collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil },
-		}},
-	}
-	if err := opt.validate(); !errors.Is(err, ErrReservedMetricName) {
-		t.Errorf("want ErrReservedMetricName, got %v", err)
-	}
-}
 
 // -------------------------------------------------------------------
 // Built-in Metric: watch loop & Reporter routing
@@ -158,7 +126,7 @@ func newTestAp(t *testing.T, reporter report.Reporter) *autoPprof {
 		watchInterval:               20 * time.Millisecond,
 		minConsecutiveOverThreshold: 3,
 		reporter:                    reporter,
-		metrics:                     make(map[string]*metricRunner),
+		cascadedRunners:             make(map[string]*metricRunner),
 		stopC:                       make(chan struct{}),
 	}
 }
@@ -556,65 +524,19 @@ func TestUserMetric_defaultFilenameComment(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Register / Unregister / ErrNotStarted / reserved / already
+// Register lifecycle
 // -------------------------------------------------------------------
 
 func TestRegister_errNotStarted(t *testing.T) {
 	resetGlobal()
-	if err := Register(&fakeMetric{nameVal: "x", thresholdVal: 1,
-		queryFn: func() (float64, error) { return 0, nil }}); !errors.Is(err, ErrNotStarted) {
+	m := &fakeMetric{nameVal: "x", thresholdVal: 1,
+		queryFn: func() (float64, error) { return 0, nil }}
+	if err := Register(m); !errors.Is(err, ErrNotStarted) {
 		t.Errorf("want ErrNotStarted, got %v", err)
 	}
-	if err := Unregister("x"); !errors.Is(err, ErrNotStarted) {
-		t.Errorf("want ErrNotStarted, got %v", err)
-	}
 }
 
-func TestRegister_duplicate(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
-	ap := newTestAp(t, mockReporter)
-	t.Cleanup(func() { ap.stop() })
-
-	m1 := &fakeMetric{nameVal: "dup", thresholdVal: 1,
-		queryFn:   func() (float64, error) { return 0, nil },
-		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-	m2 := &fakeMetric{nameVal: "dup", thresholdVal: 1,
-		queryFn:   func() (float64, error) { return 0, nil },
-		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-
-	if err := ap.registerMetric(m1); err != nil {
-		t.Fatal(err)
-	}
-	if err := ap.registerMetric(m2); !errors.Is(err, ErrMetricAlreadyRegistered) {
-		t.Errorf("want ErrMetricAlreadyRegistered, got %v", err)
-	}
-}
-
-func TestUnregister_notRegistered(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	ap := newTestAp(t, mockReporter)
-	t.Cleanup(func() { ap.stop() })
-	if err := ap.unregisterMetric("none"); !errors.Is(err, ErrMetricNotRegistered) {
-		t.Errorf("want ErrMetricNotRegistered, got %v", err)
-	}
-}
-
-func TestUnregister_builtInForbidden(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	ap := newTestAp(t, mockReporter)
-	t.Cleanup(func() { ap.stop() })
-	ap.registerBuiltIn(&cpuMetric{threshold: 1})
-	if err := ap.unregisterMetric("cpu"); !errors.Is(err, ErrCannotUnregisterBuiltIn) {
-		t.Errorf("want ErrCannotUnregisterBuiltIn, got %v", err)
-	}
-}
-
-func TestUnregister_stopsReporter(t *testing.T) {
+func TestRegister_stopsOnAutoPprofStop(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	var after atomic.Int32
 	mockReporter := report.NewMockReporter(ctrl)
@@ -636,29 +558,25 @@ func TestUnregister_stopsReporter(t *testing.T) {
 	}
 	waitFor(t, func() bool { return after.Load() > 0 }, time.Second)
 
-	if err := ap.unregisterMetric("gone"); err != nil {
-		t.Fatal(err)
-	}
+	ap.stop()
 	snap := after.Load()
 	time.Sleep(100 * time.Millisecond)
-	if delta := after.Load() - snap; delta > 1 {
-		// allow 1 extra fire if it was mid-cycle when unregister happened
-		t.Errorf("after Unregister, got %d more reports", delta)
+	if delta := after.Load() - snap; delta != 0 {
+		t.Errorf("after Stop, got %d more reports", delta)
 	}
-	ap.stop()
 }
 
 // -------------------------------------------------------------------
-// Query error cleans up the map so the name can be reused
+// Query error terminates the watcher
 // -------------------------------------------------------------------
 
-func TestWatchMetric_queryErrorRemovesFromMap(t *testing.T) {
+func TestWatchMetric_queryErrorExitsWatcher(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	// Reporter must never be called; Query errored before any fire.
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
 	ap := newTestAp(t, mockReporter)
-	t.Cleanup(func() { ap.stop() })
 
 	broken := &fakeMetric{nameVal: "boom", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
 		queryFn:   func() (float64, error) { return 0, errors.New("boom") },
@@ -667,19 +585,12 @@ func TestWatchMetric_queryErrorRemovesFromMap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitFor(t, func() bool {
-		ap.metricsMu.Lock()
-		defer ap.metricsMu.Unlock()
-		_, stillThere := ap.metrics["boom"]
-		return !stillThere
-	}, time.Second)
-
-	// Re-register with the same name should succeed.
-	replacement := &fakeMetric{nameVal: "boom", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn:   func() (float64, error) { return 0, nil },
-		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-	if err := ap.registerMetric(replacement); err != nil {
-		t.Errorf("re-register failed: %v", err)
+	// Give the ticker one or two fires then Stop should return promptly,
+	// proving the watcher exited on its own.
+	time.Sleep(60 * time.Millisecond)
+	ap.stop()
+	if n := broken.queryCalls.Load(); n < 1 {
+		t.Errorf("expected at least one Query call, got %d", n)
 	}
 }
 
@@ -696,10 +607,10 @@ func TestStop_idempotent(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Concurrency: Register/Unregister under -race
+// Concurrency: Register under -race
 // -------------------------------------------------------------------
 
-func TestRegisterUnregister_concurrent(t *testing.T) {
+func TestRegister_concurrent(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockReporter := report.NewMockReporter(ctrl)
 	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -716,10 +627,7 @@ func TestRegisterUnregister_concurrent(t *testing.T) {
 			m := &fakeMetric{nameVal: name, thresholdVal: 1, intervalVal: 10 * time.Millisecond,
 				queryFn:   func() (float64, error) { return 0, nil },
 				collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-			for j := 0; j < 20; j++ {
-				_ = ap.registerMetric(m)
-				_ = ap.unregisterMetric(name)
-			}
+			_ = ap.registerMetric(m)
 		}(i)
 	}
 	wg.Wait()

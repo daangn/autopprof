@@ -15,8 +15,3 @@ func Stop() {}
 func Register(m Metric) error {
 	return ErrUnsupportedPlatform
 }
-
-// Unregister does not do anything on unsupported platforms.
-func Unregister(name string) error {
-	return ErrUnsupportedPlatform
-}

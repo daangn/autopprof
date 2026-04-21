@@ -38,9 +38,3 @@ func TestRegister_unsupportedPlatform(t *testing.T) {
 		t.Errorf("Register() = %v, want %v", err, ErrUnsupportedPlatform)
 	}
 }
-
-func TestUnregister_unsupportedPlatform(t *testing.T) {
-	if err := Unregister("x"); !errors.Is(err, ErrUnsupportedPlatform) {
-		t.Errorf("Unregister() = %v, want %v", err, ErrUnsupportedPlatform)
-	}
-}

@@ -2,7 +2,6 @@ package autopprof
 
 import (
 	"io"
-	"sync"
 	"time"
 )
 
@@ -101,9 +100,3 @@ func validateMetric(m Metric) error {
 	}
 	return nil
 }
-
-// reservedMetricNames protects the built-in namespace (cpu/mem/goroutine)
-// from user collisions. Populated at Start time by registerBuiltIn so
-// that adding a new built-in metric in the future requires no change
-// to this declaration.
-var reservedMetricNames sync.Map // map[string]struct{}
