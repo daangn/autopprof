@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/daangn/autopprof/v2/queryer"
@@ -38,23 +37,12 @@ const (
 	goroutineCommentFmt = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
 )
 
-// cachedHostname avoids repeating the os.Hostname syscall on every
-// Collect call (hostname doesn't change during process lifetime).
-var (
-	cachedHostname     string
-	cachedHostnameOnce sync.Once
-)
 
 // hostnameSafe returns os.Hostname() or "" (matches the original
-// slack.go behavior, which also discards the error). The result is
-// cached after the first call — hostname doesn't change during the
-// process lifetime and the syscall was being repeated on every
-// threshold breach.
+// slack.go behavior, which also discards the error).
 func hostnameSafe() string {
-	cachedHostnameOnce.Do(func() {
-		cachedHostname, _ = os.Hostname()
-	})
-	return cachedHostname
+	h, _ := os.Hostname()
+	return h
 }
 
 // collectBuiltIn is the shared shape of Collect for built-in metrics.
