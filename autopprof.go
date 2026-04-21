@@ -127,9 +127,12 @@ func Start(opt Option) error {
 			return err
 		}
 	}
-	if err := ap.bootstrapMetrics(opt); err != nil {
-		ap.stop()
-		return err
+	ap.registerBuiltinMetrics(opt)
+	for _, m := range opt.Metrics {
+		if err := ap.registerMetric(m); err != nil {
+			ap.stop()
+			return err
+		}
 	}
 	globalAp = ap
 	return nil
@@ -192,11 +195,11 @@ func (ap *autoPprof) loadCPUQuota() error {
 	return nil
 }
 
-// bootstrapMetrics registers every enabled built-in metric plus the
-// caller-supplied Option.Metrics. On failure the caller is
-// responsible for calling ap.stop() to tear down any watchers
-// already spawned.
-func (ap *autoPprof) bootstrapMetrics(opt Option) error {
+// registerBuiltinMetrics installs the pre-defined CPU / Mem / Goroutine
+// metrics unless their Disable flag says otherwise. Built-in
+// registration cannot fail, so this function is void; user-supplied
+// Option.Metrics are registered separately by Start().
+func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 	cpuThreshold := defaultCPUThreshold
 	if opt.CPUThreshold != 0 {
 		cpuThreshold = opt.CPUThreshold
@@ -228,12 +231,6 @@ func (ap *autoPprof) bootstrapMetrics(opt Option) error {
 			rt: ap.runtimeQueryer, p: ap.profiler,
 		})
 	}
-	for _, m := range opt.Metrics {
-		if err := ap.registerMetric(m); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // registerBuiltIn installs a pre-defined Metric. It also records the
