@@ -10,3 +10,13 @@ func Start(opt Option) error {
 
 // Stop does not do anything on unsupported platforms.
 func Stop() {}
+
+// Register does not do anything on unsupported platforms.
+func Register(m Metric) error {
+	return ErrUnsupportedPlatform
+}
+
+// Unregister does not do anything on unsupported platforms.
+func Unregister(name string) error {
+	return ErrUnsupportedPlatform
+}

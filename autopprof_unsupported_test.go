@@ -28,3 +28,19 @@ func TestStart(t *testing.T) {
 		})
 	}
 }
+
+func TestRegister_unsupportedPlatform(t *testing.T) {
+	m := NewMetric("x", 1, 0,
+		func() (float64, error) { return 0, nil },
+		func(float64) (CollectResult, error) { return CollectResult{}, nil },
+	)
+	if err := Register(m); !errors.Is(err, ErrUnsupportedPlatform) {
+		t.Errorf("Register() = %v, want %v", err, ErrUnsupportedPlatform)
+	}
+}
+
+func TestUnregister_unsupportedPlatform(t *testing.T) {
+	if err := Unregister("x"); !errors.Is(err, ErrUnsupportedPlatform) {
+		t.Errorf("Unregister() = %v, want %v", err, ErrUnsupportedPlatform)
+	}
+}

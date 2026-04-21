@@ -3,7 +3,7 @@ package autopprof
 import (
 	"time"
 
-	"github.com/daangn/autopprof/report"
+	"github.com/daangn/autopprof/v2/report"
 )
 
 const (
@@ -42,11 +42,6 @@ type Option struct {
 	//  is higher than this threshold.
 	GoroutineThreshold int
 
-	// deprecated: use reportAll instead.
-	// ReportBoth sets whether to trigger reports for both CPU and memory when either threshold is exceeded.
-	// If some profiling is disabled, exclude it.
-	ReportBoth bool
-
 	// ReportAll sets whether to trigger reports for all profiling types when any threshold is exceeded.
 	// If some profiling is disabled, exclude it.
 	ReportAll bool
@@ -54,11 +49,25 @@ type Option struct {
 	// Reporter is the reporter to send the profiling report implementing
 	//  the report.Reporter interface.
 	Reporter report.Reporter
+
+	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
+	// "<app>" segment. If left empty, the app segment is omitted.
+	App string
+
+	// Metrics are user-defined Metrics registered at Start. Additional
+	// metrics can be added later via autopprof.Register.
+	//
+	// Names "cpu", "mem", and "goroutine" are reserved for the built-in
+	// metrics and cannot be used here.
+	Metrics []Metric
 }
 
 // NOTE(mingrammer): testing the validate() is done in autopprof_test.go.
 func (o Option) validate() error {
-	if o.DisableCPUProf && o.DisableMemProf && o.DisableGoroutineProf {
+	// Disable-all is only an error when no user metrics pick up the
+	// slack; a user with one or more Metrics can still make the
+	// library do meaningful work.
+	if o.DisableCPUProf && o.DisableMemProf && o.DisableGoroutineProf && len(o.Metrics) == 0 {
 		return ErrDisableAllProfiling
 	}
 	if o.CPUThreshold < 0 || o.CPUThreshold > 1 {
@@ -72,6 +81,21 @@ func (o Option) validate() error {
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter
+	}
+
+	seen := make(map[string]struct{}, len(o.Metrics))
+	for _, m := range o.Metrics {
+		if err := validateMetric(m); err != nil {
+			return err
+		}
+		name := m.Name()
+		if _, reserved := reservedMetricNames.Load(name); reserved {
+			return ErrReservedMetricName
+		}
+		if _, dup := seen[name]; dup {
+			return ErrInvalidMetric
+		}
+		seen[name] = struct{}{}
 	}
 	return nil
 }
