@@ -48,7 +48,7 @@ type autoPprof struct {
 	// the cgroup queryer and profiler protect their own shared state
 	// internally.
 	metricsMu sync.Mutex
-	metrics   map[string]*registeredMetric
+	metrics   map[string]*metricRunner
 
 	// wg tracks every live watcher goroutine so Stop() blocks until
 	// in-flight pprof work (CPU profiling can run up to ~10s) unwinds.
@@ -61,14 +61,14 @@ type autoPprof struct {
 	stopC chan struct{}
 }
 
-// registeredMetric wraps a Metric with the runtime bookkeeping for its
+// metricRunner wraps a Metric with the runtime bookkeeping for its
 // watcher goroutine.
 //
 // The underlying Metric implementations protect their own shared
 // state: cgroup queryer has qMu for its CPU snapshot queue, profiler
 // has cpuMu around pprof.StartCPUProfile. That keeps the built-in
 // concurrency invariants at the source and lets this layer stay thin.
-type registeredMetric struct {
+type metricRunner struct {
 	metric    Metric
 	name      string        // cached m.Name() at registration
 	threshold float64       // cached m.Threshold() at registration
@@ -119,7 +119,7 @@ func Start(opt Option) error {
 		cgroupQueryer:               cgroupQryer,
 		runtimeQueryer:              runtimeQryer,
 		profiler:                    profr,
-		metrics:                     make(map[string]*registeredMetric),
+		metrics:                     make(map[string]*metricRunner),
 		stopC:                       make(chan struct{}),
 	}
 	if !ap.disableCPUProf {
@@ -326,12 +326,12 @@ func (ap *autoPprof) removeFromMapIfPresent(name string) {
 // newRunner caches the Metric's meta values at registration time so
 // the watch loop can rely on stable name/threshold/interval even if a
 // user's implementation mutates its return values later.
-func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *registeredMetric {
+func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *metricRunner {
 	interval := m.Interval()
 	if interval == 0 {
 		interval = globalInterval
 	}
-	return &registeredMetric{
+	return &metricRunner{
 		metric:    m,
 		name:      m.Name(),
 		threshold: m.Threshold(),
@@ -347,7 +347,7 @@ func newRunner(m Metric, builtIn bool, globalInterval time.Duration) *registered
 // tick above threshold, suppress subsequent ticks until either the
 // counter resets (drops below threshold) or reaches
 // minConsecutiveOverThreshold at which point it wraps around to 0.
-func (ap *autoPprof) watchMetric(runner *registeredMetric) {
+func (ap *autoPprof) watchMetric(runner *metricRunner) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 
@@ -398,7 +398,7 @@ func (ap *autoPprof) watchMetric(runner *registeredMetric) {
 // state (pprof CPU profiler, cgroup snapshot queue) is protected at
 // its source inside profiler / cgroup queryer, so this layer just
 // calls Collect and forwards the bytes to the Reporter.
-func (ap *autoPprof) fireReport(runner *registeredMetric, value float64) error {
+func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 	result, err := runner.metric.Collect(value)
 	if err != nil {
 		return fmt.Errorf("collect: %w", err)
@@ -440,7 +440,7 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	}
 
 	ap.metricsMu.Lock()
-	targets := make([]*registeredMetric, 0, len(ap.metrics))
+	targets := make([]*metricRunner, 0, len(ap.metrics))
 	for name, r := range ap.metrics {
 		if !r.builtIn || name == triggered {
 			continue
