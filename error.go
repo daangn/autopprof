@@ -2,7 +2,6 @@ package autopprof
 
 import "errors"
 
-// Errors.
 var (
 	ErrUnsupportedPlatform = errors.New(
 		"autopprof: unsupported platform (only Linux is supported)",

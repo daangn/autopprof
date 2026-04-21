@@ -14,17 +14,14 @@ import (
 
 const reportTimeLayout = "2006-01-02T150405.MST"
 
-// Built-in Metric names. Exported so external Reporter implementations
-// can switch on ReportInfo.MetricName without string literals.
+// Built-in Metric names. Exported so Reporter implementations can
+// switch on ReportInfo.MetricName without string literals.
 const (
 	MetricNameCPU       = "cpu"
 	MetricNameMem       = "mem"
 	MetricNameGoroutine = "goroutine"
 )
 
-// Built-in filename formats. Kept unexported because v2 Reporter
-// implementations should route on ReportInfo.MetricName rather than
-// parsing filenames.
 const (
 	cpuProfileFilenameFmt       = "pprof.%s.%s.samples.cpu.%s.pprof"
 	heapProfileFilenameFmt      = "pprof.%s.%s.alloc_objects.alloc_space.inuse_objects.inuse_space.%s.pprof"
@@ -37,19 +34,11 @@ const (
 	goroutineCommentFmt = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
 )
 
-
-// hostnameSafe returns os.Hostname() or "" (matches the original
-// slack.go behavior, which also discards the error).
 func hostnameSafe() string {
 	h, _ := os.Hostname()
 	return h
 }
 
-// collectBuiltIn is the shared shape of Collect for built-in metrics.
-// It runs the profiler function, wraps the bytes in a reader, and
-// assembles the filename (using the per-metric format) plus the
-// comment, keeping cpuMetric / memMetric / goroutineMetric's Collect
-// thin.
 func collectBuiltIn(
 	app, filenameFmt string,
 	profile func() ([]byte, error),
@@ -67,9 +56,9 @@ func collectBuiltIn(
 	}, nil
 }
 
-// defaultFilename is used when a Metric's Collect returns an empty
-// Filename. Keeps the ".bin" extension to signal "opaque bytes" to
-// Reporter implementations that don't recognize the metric name.
+// defaultFilename is used when Collect returns an empty Filename. The
+// ".bin" extension signals "opaque bytes" to Reporter implementations
+// that don't recognize the metric name.
 func defaultFilename(metricName string) string {
 	return fmt.Sprintf(
 		"%s.%s.%s.bin",
@@ -77,9 +66,6 @@ func defaultFilename(metricName string) string {
 	)
 }
 
-// defaultComment is used when a Metric's Collect returns an empty
-// Comment. Produces a generic alert text with the current value and
-// threshold so the message is still informative.
 func defaultComment(metricName string, value, threshold float64) string {
 	return fmt.Sprintf(
 		":rotating_light:[%s] value=%.2f threshold=%.2f",
@@ -98,7 +84,7 @@ type cpuMetric struct {
 
 func (m *cpuMetric) Name() string            { return MetricNameCPU }
 func (m *cpuMetric) Threshold() float64      { return m.threshold }
-func (m *cpuMetric) Interval() time.Duration { return 0 } // use global
+func (m *cpuMetric) Interval() time.Duration { return 0 }
 func (m *cpuMetric) Query() (float64, error) { return m.cg.CPUUsage() }
 
 func (m *cpuMetric) Collect(value float64) (CollectResult, error) {
@@ -133,10 +119,9 @@ func (m *memMetric) Collect(value float64) (CollectResult, error) {
 
 // ---------- goroutineMetric ----------
 
-// goroutineMetric stores its threshold as int to mirror
-// Option.GoroutineThreshold's type, but exposes it as float64 through
-// the Metric interface. The int(value) cast in Collect preserves the
-// legacy integer-formatted comment produced by the original reporter.
+// goroutineMetric keeps its threshold as int to mirror
+// Option.GoroutineThreshold; the int(value) cast in Collect preserves
+// the integer-formatted legacy comment.
 type goroutineMetric struct {
 	app       string
 	threshold int

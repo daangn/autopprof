@@ -14,22 +14,14 @@ import (
 	"github.com/daangn/autopprof/v2/report"
 )
 
-const (
-	reportTimeout = 5 * time.Second
-)
+const reportTimeout = 5 * time.Second
 
-// autoPprof is the internal singleton holding every live Metric
-// watcher. The unified Metric interface lets CPU / Mem / Goroutine
-// and any user-registered metric share one watch loop, one debounce
-// counter per metric, and one Reporter path.
 type autoPprof struct {
 	watchInterval               time.Duration
 	minConsecutiveOverThreshold int
 
 	reporter report.Reporter
-	// app is the "<app>" segment used by built-in filenames
-	// (sourced from Option.App).
-	app string
+	app      string
 
 	reportAll bool
 
@@ -42,36 +34,26 @@ type autoPprof struct {
 	profiler       profiler
 
 	// cascadedRunners holds only the built-in metrics so cascadeBuiltIn
-	// can iterate them. Populated during Start and thereafter read-only
+	// can iterate them. Populated during Start and thereafter read-only —
+	// no mutex needed.
 	cascadedRunners map[string]*metricRunner
 
-	// wg tracks every live watcher goroutine (built-in and custom) so
-	// Stop() blocks until in-flight pprof work (CPU profiling runs up
-	// to ~10s) unwinds.
-	wg sync.WaitGroup
-
-	// stopOnce guards against double close of stopC / wg.Wait.
+	// wg tracks every live watcher goroutine so Stop blocks until
+	// in-flight pprof work (CPU profiling runs up to ~10s) unwinds.
+	wg       sync.WaitGroup
 	stopOnce sync.Once
-
-	// stopC broadcasts shutdown to every watcher goroutine.
-	stopC chan struct{}
+	stopC    chan struct{}
 }
 
-// metricRunner wraps a Metric with the runtime bookkeeping for its
-// watcher goroutine. The underlying Metric implementations protect
-// their own shared state: cgroup queryer has qMu for its CPU snapshot
-// queue, profiler has cpuMu around pprof.StartCPUProfile. That keeps
-// concurrency invariants at the source and lets this layer stay thin.
 type metricRunner struct {
 	metric    Metric
-	name      string        // cached m.Name() at registration
-	threshold float64       // cached m.Threshold() at registration
-	interval  time.Duration // cached m.Interval() (0 resolved to global)
+	name      string
+	threshold float64
+	interval  time.Duration
 }
 
-// globalAp holds the current running autoPprof instance, or nil when
-// no Start() has succeeded yet. Start and Stop are expected at process
-// init / shutdown only, so no atomic protection is needed.
+// globalAp is the running instance, or nil before Start. Start/Stop
+// are expected at process init/shutdown only, so no atomic protection.
 var globalAp *autoPprof
 
 // Start configures and runs the autopprof process. Call it once at
@@ -123,8 +105,7 @@ func Start(opt Option) error {
 	return nil
 }
 
-// Stop stops the global autopprof process. sync.Once inside ap.stop()
-// keeps repeated calls safe.
+// Stop stops the global autopprof process. Safe to call multiple times.
 func Stop() {
 	if globalAp == nil {
 		return
@@ -134,8 +115,7 @@ func Stop() {
 }
 
 // Register adds a user Metric to the running autopprof instance. The
-// metric's watcher runs until autopprof.Stop is called.
-// Must be called after Start; otherwise returns ErrNotStarted.
+// metric's watcher runs until Stop.
 func Register(m Metric) error {
 	if globalAp == nil {
 		return ErrNotStarted
@@ -143,22 +123,16 @@ func Register(m Metric) error {
 	return globalAp.registerMetric(m)
 }
 
-// loadCPUQuota resolves CPU limits for the container. If the cgroup
-// quota is not available we log and silently disable CPU profiling so
-// the rest of the library can keep working (same behavior as v1).
+// loadCPUQuota resolves the container CPU limit. If the cgroup quota
+// isn't set we log and silently disable CPU profiling (matching v1).
 func (ap *autoPprof) loadCPUQuota() error {
 	err := ap.cgroupQueryer.SetCPUQuota()
 	if err == nil {
 		return nil
 	}
-
-	// If memory profiling is disabled and CPU quota isn't set,
-	//  returns an error immediately.
 	if ap.disableMemProf {
 		return err
 	}
-	// If memory profiling is enabled, just logs the error and
-	//  disables the cpu profiling.
 	log.Println(
 		"autopprof: disable the cpu profiling due to the CPU quota isn't set",
 	)
@@ -166,10 +140,6 @@ func (ap *autoPprof) loadCPUQuota() error {
 	return nil
 }
 
-// registerBuiltinMetrics installs the pre-defined CPU / Mem / Goroutine
-// metrics unless their Disable flag says otherwise. Built-in
-// registration cannot fail, so this function is void; user-supplied
-// Option.Metrics are registered separately by Start().
 func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 	cpuThreshold := defaultCPUThreshold
 	if opt.CPUThreshold != 0 {
@@ -204,9 +174,6 @@ func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 	}
 }
 
-// registerBuiltIn installs a pre-defined Metric into cascadedRunners
-// and spawns its watcher goroutine. Called only from Start, so the
-// map write needs no synchronization.
 func (ap *autoPprof) registerBuiltIn(m Metric) {
 	runner := newRunner(m, ap.watchInterval)
 	ap.cascadedRunners[runner.name] = runner
@@ -217,10 +184,6 @@ func (ap *autoPprof) registerBuiltIn(m Metric) {
 	}()
 }
 
-// registerMetric spawns a watcher for a user-registered Metric.
-// Callers must not invoke this concurrently with Stop (the stopC
-// non-blocking check gives a best-effort ErrNotStarted when Stop
-// has already fired, but is not a race-free guard).
 func (ap *autoPprof) registerMetric(m Metric) error {
 	if err := validateMetric(m); err != nil {
 		return err
@@ -239,9 +202,9 @@ func (ap *autoPprof) registerMetric(m Metric) error {
 	return nil
 }
 
-// newRunner caches the Metric's meta values at registration time so
-// the watch loop can rely on stable name/threshold/interval even if a
-// user's implementation mutates its return values later.
+// newRunner caches Metric's meta values so the watch loop uses a
+// stable name/threshold/interval even if the implementation mutates
+// them later.
 func newRunner(m Metric, globalInterval time.Duration) *metricRunner {
 	interval := m.Interval()
 	if interval == 0 {
@@ -255,12 +218,9 @@ func newRunner(m Metric, globalInterval time.Duration) *metricRunner {
 	}
 }
 
-// watchMetric is the unified watch loop that replaces v1's three
-// type-specific watchers. The debounce mechanic
-// (minConsecutiveOverThreshold) is identical to v1: fire on the first
-// tick above threshold, suppress subsequent ticks until either the
-// counter resets (drops below threshold) or reaches
-// minConsecutiveOverThreshold at which point it wraps around to 0.
+// watchMetric runs the unified watch loop. minConsecutiveOverThreshold
+// debounces repeat fires: report on the first tick above threshold,
+// suppress until the counter drops below threshold or wraps around.
 func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
@@ -300,18 +260,13 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	}
 }
 
-// fireReport drives one cycle of Collect+Report. Concurrency-sensitive
-// state (pprof CPU profiler, cgroup snapshot queue) is protected at
-// its source inside profiler / cgroup queryer, so this layer just
-// calls Collect and forwards the bytes to the Reporter.
 func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 	result, err := runner.metric.Collect(value)
 	if err != nil {
 		return fmt.Errorf("collect: %w", err)
 	}
 	if result.Reader == nil {
-		// "Handled internally, skip the Reporter call" — useful for
-		// side-effect-only hooks that already pushed data elsewhere.
+		// Side-effect-only hook; nothing to ship.
 		return nil
 	}
 
@@ -334,10 +289,9 @@ func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 	return ap.reporter.Report(ctx, result.Reader, info)
 }
 
-// cascadeBuiltIn implements the ReportAll cascade: when any built-in
-// metric breaches, report the other built-in metrics too. Only
-// built-in metrics participate (custom metrics stay independent).
-// cascadedRunners is read-only after Start, so no lock is needed.
+// cascadeBuiltIn reports the other built-in metrics when any built-in
+// breaches. Custom metrics stay independent. cascadedRunners is
+// read-only after Start, so no lock.
 func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	if !ap.reportAll {
 		return
@@ -361,9 +315,9 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 	}
 }
 
-// stop shuts down every watcher and blocks until they exit. sync.Once
-// keeps double-Stop safe, wg.Wait ensures Stop() doesn't return until
-// every pprof.StartCPUProfile has unwound.
+// stop signals every watcher and blocks until they exit. wg.Wait
+// ensures Stop() doesn't return while pprof.StartCPUProfile is in
+// flight.
 func (ap *autoPprof) stop() {
 	ap.stopOnce.Do(func() {
 		close(ap.stopC)

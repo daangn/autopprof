@@ -12,10 +12,10 @@ const (
 	defaultGoroutineThreshold          = 50000
 	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
-	defaultMinConsecutiveOverThreshold = 12 // min 1 minute. (12*5s)
+	defaultMinConsecutiveOverThreshold = 12 // 12 * 5s == 1 minute
 )
 
-// Option is the configuration for the autopprof.
+// Option is the configuration for autopprof.
 type Option struct {
 	// DisableCPUProf disables the CPU profiling.
 	DisableCPUProf bool
@@ -24,30 +24,28 @@ type Option struct {
 	// DisableGoroutineProf disables the goroutine profiling.
 	DisableGoroutineProf bool
 
-	// CPUThreshold is the cpu usage threshold (between 0 and 1)
-	//  to trigger the cpu profiling.
-	// Autopprof will start the cpu profiling when the cpu usage
-	//  is higher than this threshold.
+	// CPUThreshold is the cpu usage threshold (between 0 and 1) to
+	// trigger the cpu profiling. Autopprof starts cpu profiling when
+	// the cpu usage is higher than this threshold.
 	CPUThreshold float64
 
-	// MemThreshold is the memory usage threshold (between 0 and 1)
-	//  to trigger the heap profiling.
-	// Autopprof will start the heap profiling when the memory usage
-	//  is higher than this threshold.
+	// MemThreshold is the memory usage threshold (between 0 and 1) to
+	// trigger the heap profiling. Autopprof starts heap profiling
+	// when the memory usage is higher than this threshold.
 	MemThreshold float64
 
-	// GoroutineThreshold is the goroutine count threshold to trigger the goroutine profiling.
-	//  to trigger the goroutine profiling.
-	// Autopprof will start the goroutine profiling when the goroutine count
-	//  is higher than this threshold.
+	// GoroutineThreshold is the goroutine count threshold to trigger
+	// the goroutine profiling. Autopprof starts goroutine profiling
+	// when the goroutine count is higher than this threshold.
 	GoroutineThreshold int
 
-	// ReportAll sets whether to trigger reports for all profiling types when any threshold is exceeded.
-	// If some profiling is disabled, exclude it.
+	// ReportAll triggers reports for every enabled built-in profile
+	// when any of them exceeds its threshold. Disabled built-ins are
+	// skipped.
 	ReportAll bool
 
-	// Reporter is the reporter to send the profiling report implementing
-	//  the report.Reporter interface.
+	// Reporter is the reporter to send the profiling report. Must
+	// implement the report.Reporter interface.
 	Reporter report.Reporter
 
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
@@ -59,11 +57,9 @@ type Option struct {
 	Metrics []Metric
 }
 
-// NOTE(mingrammer): testing the validate() is done in autopprof_test.go.
 func (o Option) validate() error {
-	// Disable-all is only an error when no user metrics pick up the
-	// slack; a user with one or more Metrics can still make the
-	// library do meaningful work.
+	// Allow disabling every built-in as long as at least one custom
+	// Metric is registered.
 	if o.DisableCPUProf && o.DisableMemProf && o.DisableGoroutineProf && len(o.Metrics) == 0 {
 		return ErrDisableAllProfiling
 	}
@@ -87,4 +83,3 @@ func (o Option) validate() error {
 	}
 	return nil
 }
-

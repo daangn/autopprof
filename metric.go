@@ -5,18 +5,10 @@ import (
 	"time"
 )
 
-// CollectResult is the payload Metric.Collect hands to autopprof for
-// forwarding to the Reporter.
-//   - Reader is the bytes to upload. A nil Reader means "handled
-//     internally, skip the Reporter call" — useful for side-effect-only
-//     hooks that already sent their data elsewhere.
-//   - Filename is optional. If empty, autopprof generates a default
-//     filename from the Metric's name and the current timestamp.
-//   - Comment is optional. If empty, autopprof generates a default
-//     comment from the metric name, value, and threshold.
-//
-// Reporter implementations can override Filename/Comment by inspecting
-// ReportInfo.Value/Threshold/MetricName instead.
+// CollectResult is the payload Metric.Collect hands to autopprof.
+// Reader == nil means "handled internally, skip the Reporter call"
+// (useful for side-effect-only hooks). Empty Filename/Comment are
+// filled in with autopprof defaults.
 type CollectResult struct {
 	Reader   io.Reader
 	Filename string
@@ -24,21 +16,17 @@ type CollectResult struct {
 }
 
 // Metric is the unified abstraction for every threshold-triggered
-// data collection autopprof performs. CPU, memory, and goroutine-count
-// watchers are pre-defined Metric implementations built from Option's
-// threshold fields at Start time. Users register additional Metrics
-// via Option.Metrics or autopprof.Register. All watchers run until
-// Stop.
+// data collection autopprof performs. Built-in CPU/Mem/Goroutine
+// watchers are pre-defined implementations; users register additional
+// Metrics via Option.Metrics or autopprof.Register.
 //
-// Thread-safety: for user-registered Metrics, autopprof only calls
-// Query and Collect from that Metric's own watcher goroutine, so
-// implementations do not need internal synchronization. (The cascade
-// triggered by Option.ReportAll touches only the built-in metrics.)
+// Thread-safety: autopprof only calls Query and Collect from the
+// Metric's own watcher goroutine, so implementations do not need
+// internal synchronization. (The ReportAll cascade touches only
+// built-ins.)
 //
-// Stable meta: Name, Threshold, and Interval are read once at
-// registration and cached; changing their return values afterwards
-// has no effect. Interval() == 0 means "use the global watchInterval
-// (default 5s)".
+// Name/Threshold/Interval are read once at registration. Interval == 0
+// means "use the global watchInterval (default 5s)".
 type Metric interface {
 	Name() string
 	Threshold() float64
@@ -47,10 +35,8 @@ type Metric interface {
 	Collect(value float64) (CollectResult, error)
 }
 
-// NewMetric is a convenience constructor for ad-hoc metrics that don't
-// warrant their own struct. Nil query/collect functions are defended
-// against: the returned Metric surfaces ErrInvalidMetric at call time
-// instead of panicking.
+// NewMetric is a convenience constructor. Nil query/collect surface
+// ErrInvalidMetric at call time instead of panicking.
 func NewMetric(
 	name string,
 	threshold float64,
@@ -89,8 +75,6 @@ func (b *basicMetric) Interval() time.Duration                  { return b.inter
 func (b *basicMetric) Query() (float64, error)                  { return b.query() }
 func (b *basicMetric) Collect(v float64) (CollectResult, error) { return b.collect(v) }
 
-// validateMetric is shared by Option.validate and registerMetric.
-// Query/Collect nil defense is handled inside NewMetric.
 func validateMetric(m Metric) error {
 	if m == nil {
 		return ErrInvalidMetric
