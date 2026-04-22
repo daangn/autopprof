@@ -4,694 +4,1298 @@
 package autopprof
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/daangn/autopprof/v2/queryer"
-	"github.com/daangn/autopprof/v2/report"
+	"github.com/daangn/autopprof/queryer"
 	"github.com/golang/mock/gomock"
+
+	"github.com/daangn/autopprof/report"
 )
 
-// fakeMetric is the test stub for the Metric interface. Each field
-// lets a test inject behavior without spinning up a real struct.
-type fakeMetric struct {
-	nameVal      string
-	thresholdVal float64
-	intervalVal  time.Duration
-	queryFn      func() (float64, error)
-	collectFn    func(v float64) (CollectResult, error)
-	queryCalls   atomic.Int64
-	collectCalls atomic.Int64
-}
-
-func (f *fakeMetric) Name() string            { return f.nameVal }
-func (f *fakeMetric) Threshold() float64      { return f.thresholdVal }
-func (f *fakeMetric) Interval() time.Duration { return f.intervalVal }
-func (f *fakeMetric) Query() (float64, error) {
-	f.queryCalls.Add(1)
-	if f.queryFn != nil {
-		return f.queryFn()
-	}
-	return 0, nil
-}
-func (f *fakeMetric) Collect(v float64) (CollectResult, error) {
-	f.collectCalls.Add(1)
-	if f.collectFn != nil {
-		return f.collectFn(v)
-	}
-	return CollectResult{}, nil
-}
-
-// resetGlobal ensures test isolation — some tests Start() and don't
-// Stop() cleanly; others test CAS behavior that needs the slot empty.
-func resetGlobal() { globalAp = nil }
-
-// -------------------------------------------------------------------
-// Validation tests
-// -------------------------------------------------------------------
-
-func TestOption_validate(t *testing.T) {
-	validMetric := &fakeMetric{
-		nameVal:      "custom",
-		thresholdVal: 1,
-		queryFn:      func() (float64, error) { return 0, nil },
-		collectFn:    func(float64) (CollectResult, error) { return CollectResult{}, nil },
-	}
-	stub := report.NewMockReporter(gomock.NewController(t))
-
+func TestStart(t *testing.T) {
 	testCases := []struct {
 		name string
 		opt  Option
 		want error
 	}{
-		{"disable all with no custom metrics",
-			Option{DisableCPUProf: true, DisableMemProf: true, DisableGoroutineProf: true, Reporter: stub},
-			ErrDisableAllProfiling},
-		{"disable all but one custom metric is allowed",
-			Option{DisableCPUProf: true, DisableMemProf: true, DisableGoroutineProf: true, Reporter: stub, Metrics: []Metric{validMetric}},
-			nil},
-		{"invalid CPUThreshold",
-			Option{CPUThreshold: -0.5, Reporter: stub},
-			ErrInvalidCPUThreshold},
-		{"invalid MemThreshold",
-			Option{MemThreshold: 1.5, Reporter: stub},
-			ErrInvalidMemThreshold},
-		{"invalid GoroutineThreshold",
-			Option{GoroutineThreshold: -1, Reporter: stub},
-			ErrInvalidGoroutineThreshold},
-		{"nil Reporter",
-			Option{CPUThreshold: 0.8},
-			ErrNilReporter},
-		{"nil Metric entry",
-			Option{Reporter: stub, Metrics: []Metric{nil}},
-			ErrInvalidMetric},
-		{"empty name",
-			Option{Reporter: stub, Metrics: []Metric{&fakeMetric{thresholdVal: 1, queryFn: func() (float64, error) { return 0, nil }, collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}}},
-			ErrInvalidMetric},
-		{"negative threshold",
-			Option{Reporter: stub, Metrics: []Metric{&fakeMetric{nameVal: "x", thresholdVal: -1}}},
-			ErrInvalidMetric},
-		{"negative interval",
-			Option{Reporter: stub, Metrics: []Metric{&fakeMetric{nameVal: "x", thresholdVal: 1, intervalVal: -time.Second}}},
-			ErrInvalidMetric},
-		{"valid custom metric",
-			Option{Reporter: stub, Metrics: []Metric{validMetric}},
-			nil},
+		{
+			name: "disable flags are all true",
+			opt: Option{
+				DisableCPUProf:       true,
+				DisableMemProf:       true,
+				DisableGoroutineProf: true,
+			},
+			want: ErrDisableAllProfiling,
+		},
+		{
+			name: "invalid CPUThreshold value 1",
+			opt: Option{
+				CPUThreshold: -0.5,
+			},
+			want: ErrInvalidCPUThreshold,
+		},
+		{
+			name: "invalid CPUThreshold value 2",
+			opt: Option{
+				CPUThreshold: 2.5,
+			},
+			want: ErrInvalidCPUThreshold,
+		},
+		{
+			name: "invalid MemThreshold value 1",
+			opt: Option{
+				MemThreshold: -0.5,
+			},
+			want: ErrInvalidMemThreshold,
+		},
+		{
+			name: "invalid MemThreshold value 2",
+			opt: Option{
+				MemThreshold: 2.5,
+			},
+			want: ErrInvalidMemThreshold,
+		},
+		{
+			name: "invalid GoroutineThreshold value -1",
+			opt: Option{
+				GoroutineThreshold: -1,
+			},
+			want: ErrInvalidGoroutineThreshold,
+		},
+		{
+			name: "when given reporter is nil",
+			opt: Option{
+				Reporter: nil,
+			},
+			want: ErrNilReporter,
+		},
+		{
+			name: "valid option 1",
+			opt: Option{
+				Reporter: report.NewSlackReporter(
+					&report.SlackReporterOption{
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
+					},
+				),
+			},
+			want: nil,
+		},
+		{
+			name: "valid option 2",
+			opt: Option{
+				MemThreshold: 0.5,
+				Reporter: report.NewSlackReporter(
+					&report.SlackReporterOption{
+						App:       "appname",
+						Token:     "token",
+						ChannelID: "channel_id",
+					},
+				),
+			},
+			want: nil,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := tc.opt.validate(); !errors.Is(err, tc.want) {
-				t.Errorf("want %v, got %v", tc.want, err)
+			t.Cleanup(func() {
+				if globalAp != nil {
+					globalAp.stop()
+					globalAp = nil
+				}
+			})
+			if err := Start(tc.opt); !errors.Is(err, tc.want) {
+				t.Errorf("Start() = %v, want %v", err, tc.want)
+			}
+			if tc.want == nil && globalAp == nil {
+				t.Errorf("globalAp is nil, want non-nil value")
 			}
 		})
 	}
 }
 
+func TestStop(t *testing.T) {
+	testCases := []struct {
+		name    string
+		started bool
+	}{
+		{
+			name:    "stop before start",
+			started: false,
+		},
+		{
+			name:    "stop after start",
+			started: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				globalAp = nil
+			})
+			if tc.started {
+				_ = Start(Option{
+					MemThreshold: 0.5,
+					Reporter: report.NewSlackReporter(
+						&report.SlackReporterOption{
+							App:       "appname",
+							Token:     "token",
+							ChannelID: "channel_id",
+						},
+					),
+				})
+			}
+			Stop() // Expect no panic.
+		})
+	}
+}
 
-// -------------------------------------------------------------------
-// Built-in Metric: watch loop & Reporter routing
-// -------------------------------------------------------------------
+func TestAutoPprof_loadCPUQuota(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		newAp                  func() *autoPprof
+		wantDisableCPUProfFlag bool
+		wantErr                error
+	}{
+		{
+			name: "cpu quota is set",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
 
-func newTestAp(t *testing.T, reporter report.Reporter) *autoPprof {
-	t.Helper()
-	return &autoPprof{
-		watchInterval:               20 * time.Millisecond,
+				mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+				mockQueryer.EXPECT().
+					SetCPUQuota().
+					Return(nil) // Means that the quota is set correctly.
+
+				return &autoPprof{
+					cgroupQueryer:  mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: false,
+				}
+			},
+			wantDisableCPUProfFlag: false,
+			wantErr:                nil,
+		},
+		{
+			name: "cpu quota isn't set and memory profiling is enabled",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
+
+				mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+				mockQueryer.EXPECT().
+					SetCPUQuota().
+					Return(queryer.ErrV2CPUQuotaUndefined)
+
+				return &autoPprof{
+					cgroupQueryer:  mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: false,
+				}
+			},
+			wantDisableCPUProfFlag: true,
+			wantErr:                nil,
+		},
+		{
+			name: "cpu quota isn't set and memory profiling is disabled",
+			newAp: func() *autoPprof {
+				ctrl := gomock.NewController(t)
+
+				mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+				mockQueryer.EXPECT().
+					SetCPUQuota().
+					Return(queryer.ErrV2CPUQuotaUndefined)
+
+				return &autoPprof{
+					cgroupQueryer:  mockQueryer,
+					disableCPUProf: false,
+					disableMemProf: true,
+				}
+			},
+			wantDisableCPUProfFlag: false,
+			wantErr:                queryer.ErrV2CPUQuotaUndefined,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ap := tc.newAp()
+			err := ap.loadCPUQuota()
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("loadCPUQuota() = %v, want %v", err, tc.wantErr)
+			}
+			if ap.disableCPUProf != tc.wantDisableCPUProfFlag {
+				t.Errorf("disableCPUProf = %v, want %v", ap.disableCPUProf, tc.wantDisableCPUProfFlag)
+			}
+		})
+	}
+}
+
+func TestAutoPprof_watchCPUUsage(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var (
+		profiled bool
+		reported bool
+	)
+
+	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+	mockQueryer.EXPECT().
+		CPUUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.6, nil
+			},
+		)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileCPU().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiled = true
+				return []byte("prof"), nil
+			},
+		)
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+				reported = true
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableMemProf: true,
+		watchInterval:  1 * time.Second,
+		cpuThreshold:   0.5, // 50%.
+		cgroupQueryer:  mockQueryer,
+		profiler:       mockProfiler,
+		reporter:       mockReporter,
+		stopC:          make(chan struct{}),
+	}
+
+	go ap.watchCPUUsage()
+	t.Cleanup(func() { ap.stop() })
+
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if !profiled {
+		t.Errorf("cpu usage is not profiled")
+	}
+	if !reported {
+		t.Errorf("cpu usage is not reported")
+	}
+}
+
+func TestAutoPprof_watchCPUUsage_consecutive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var (
+		profiledCnt int
+		reportedCnt int
+	)
+
+	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+	mockQueryer.EXPECT().
+		CPUUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.6, nil
+			},
+		)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileCPU().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiledCnt++
+				return []byte("prof"), nil
+			},
+		)
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportCPUProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.CPUInfo) error {
+				reportedCnt++
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableMemProf:              true,
+		watchInterval:               1 * time.Second,
+		cpuThreshold:                0.5, // 50%.
 		minConsecutiveOverThreshold: 3,
-		reporter:                    reporter,
-		cascadedRunners:             make(map[string]*metricRunner),
+		cgroupQueryer:               mockQueryer,
+		profiler:                    mockProfiler,
+		reporter:                    mockReporter,
 		stopC:                       make(chan struct{}),
 	}
-}
 
-func TestWatchMetric_builtinCPU_routesToReporter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
-	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil)
-	mockProf := NewMockprofiler(ctrl)
-	mockProf.EXPECT().profileCPU().AnyTimes().Return([]byte("cpu-bytes"), nil)
-
-	var gotInfo report.ReportInfo
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, r io.Reader, info report.ReportInfo) error {
-			gotInfo = info
-			reported.Add(1)
-			return nil
-		})
-
-	ap := newTestAp(t, mockReporter)
-	ap.cgroupQueryer = mockCG
-	ap.profiler = mockProf
-	ap.app = "myapp"
-	ap.registerBuiltIn(&cpuMetric{app: ap.app, threshold: 0.75, cg: mockCG, p: mockProf})
+	go ap.watchCPUUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
-
-	if gotInfo.MetricName != "cpu" {
-		t.Errorf("MetricName = %q, want cpu", gotInfo.MetricName)
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	if gotInfo.Value != 0.9 || gotInfo.Threshold != 0.75 {
-		t.Errorf("Value=%v Threshold=%v", gotInfo.Value, gotInfo.Threshold)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
 	}
-	if !strings.Contains(gotInfo.Filename, "samples.cpu") || !strings.Contains(gotInfo.Filename, "myapp") {
-		t.Errorf("Filename %q lacks expected segments", gotInfo.Filename)
+
+	time.Sleep(1050 * time.Millisecond)
+	// 2nd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	if !strings.Contains(gotInfo.Comment, "[CPU]") {
-		t.Errorf("Comment %q lacks [CPU]", gotInfo.Comment)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
 	}
-}
 
-func TestWatchMetric_builtinMem_routesToReporter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
-	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.9, nil)
-	mockProf := NewMockprofiler(ctrl)
-	mockProf.EXPECT().profileHeap().AnyTimes().Return([]byte("heap-bytes"), nil)
-
-	var gotInfo report.ReportInfo
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, r io.Reader, info report.ReportInfo) error {
-			gotInfo = info
-			reported.Add(1)
-			return nil
-		})
-
-	ap := newTestAp(t, mockReporter)
-	ap.cgroupQueryer = mockCG
-	ap.profiler = mockProf
-	ap.registerBuiltIn(&memMetric{threshold: 0.75, cg: mockCG, p: mockProf})
-	t.Cleanup(func() { ap.stop() })
-
-	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
-
-	if gotInfo.MetricName != "mem" {
-		t.Errorf("MetricName = %q, want mem", gotInfo.MetricName)
+	time.Sleep(1050 * time.Millisecond)
+	// 3rd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("cpu usage is profiled %d times, want 1", profiledCnt)
 	}
-	if !strings.Contains(gotInfo.Filename, "alloc_objects") {
-		t.Errorf("Filename %q lacks heap segments", gotInfo.Filename)
+	if reportedCnt != 1 {
+		t.Errorf("cpu usage is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 4th time. Now it should be profiled and reported.
+	if profiledCnt != 2 {
+		t.Errorf("cpu usage is profiled %d times, want 2", profiledCnt)
+	}
+	if reportedCnt != 2 {
+		t.Errorf("cpu usage is reported %d times, want 2", reportedCnt)
 	}
 }
 
-func TestWatchMetric_builtinGoroutine_routesToReporter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
-	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(200)
-	mockProf := NewMockprofiler(ctrl)
-	mockProf.EXPECT().profileGoroutine().AnyTimes().Return([]byte("g-bytes"), nil)
-
-	var gotInfo report.ReportInfo
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, r io.Reader, info report.ReportInfo) error {
-			gotInfo = info
-			reported.Add(1)
-			return nil
-		})
-
-	ap := newTestAp(t, mockReporter)
-	ap.runtimeQueryer = mockRT
-	ap.profiler = mockProf
-	ap.registerBuiltIn(&goroutineMetric{threshold: 100, rt: mockRT, p: mockProf})
-	t.Cleanup(func() { ap.stop() })
-
-	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
-
-	if gotInfo.MetricName != "goroutine" {
-		t.Errorf("MetricName = %q, want goroutine", gotInfo.MetricName)
+func TestAutoPprof_watchCPUUsage_reportAll(t *testing.T) {
+	type fields struct {
+		watchInterval        time.Duration
+		cpuThreshold         float64
+		reportAll            bool
+		disableMemProf       bool
+		disableGoroutineProf bool
+		stopC                chan struct{}
 	}
-	if gotInfo.Value != 200 || gotInfo.Threshold != 100 {
-		t.Errorf("Value=%v Threshold=%v", gotInfo.Value, gotInfo.Threshold)
-	}
-}
+	testCases := []struct {
+		name     string
+		fields   fields
+		mockFunc func(*queryer.MockCgroupsQueryer, *queryer.MockRuntimeQueryer, *Mockprofiler, *report.MockReporter)
+	}{
+		{
+			name: "reportAll: true",
+			fields: fields{
+				watchInterval:        1 * time.Second,
+				cpuThreshold:         0.5, // 50%.
+				reportAll:            true,
+				disableMemProf:       false,
+				disableGoroutineProf: false,
+				stopC:                make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						CPUUsage().
+						AnyTimes().
+						Return(0.6, nil),
 
-// -------------------------------------------------------------------
-// Debounce (minConsecutiveOverThreshold)
-// -------------------------------------------------------------------
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
 
-func TestWatchMetric_debounce(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
-			reported.Add(1)
-			return nil
-		})
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
 
-	fm := &fakeMetric{
-		nameVal:      "dbn",
-		thresholdVal: 10,
-		intervalVal:  20 * time.Millisecond,
-		queryFn:      func() (float64, error) { return 100, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("x")), Filename: "f", Comment: "c"}, nil
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 500,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: true, disableMemProf: true",
+			fields: fields{
+				watchInterval:        1 * time.Second,
+				cpuThreshold:         0.5, // 50%.
+				reportAll:            true,
+				disableMemProf:       true,
+				disableGoroutineProf: false,
+				stopC:                make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						CPUUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 500,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: false",
+			fields: fields{
+				watchInterval:  1 * time.Second,
+				cpuThreshold:   0.5, // 50%.
+				reportAll:      false,
+				disableMemProf: false,
+				stopC:          make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						CPUUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
 		},
 	}
-	ap := newTestAp(t, mockReporter)
-	ap.minConsecutiveOverThreshold = 3
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ap.stop() })
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
 
-	// Five ticks @20ms ≈ 100ms — first and fourth ticks should fire.
-	time.Sleep(170 * time.Millisecond)
-	got := reported.Load()
-	if got < 2 || got > 3 {
-		t.Errorf("expected 2-3 reports with debounce=3, got %d", got)
-	}
-}
+			mockCgroupsQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+			mockRuntimeQueryer := queryer.NewMockRuntimeQueryer(ctrl)
+			mockProfiler := NewMockprofiler(ctrl)
+			mockReporter := report.NewMockReporter(ctrl)
 
-// -------------------------------------------------------------------
-// Cascade (reportAll)
-// -------------------------------------------------------------------
-
-func TestCascadeBuiltIn_reportAll(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
-	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil)
-	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.1, nil) // below threshold
-	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
-	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1) // below threshold
-	mockProf := NewMockprofiler(ctrl)
-	mockProf.EXPECT().profileCPU().AnyTimes().Return([]byte("c"), nil)
-	mockProf.EXPECT().profileHeap().AnyTimes().Return([]byte("h"), nil)
-	mockProf.EXPECT().profileGoroutine().AnyTimes().Return([]byte("g"), nil)
-
-	var cpuCnt, memCnt, goCnt atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
-			switch info.MetricName {
-			case "cpu":
-				cpuCnt.Add(1)
-			case "mem":
-				memCnt.Add(1)
-			case "goroutine":
-				goCnt.Add(1)
+			ap := &autoPprof{
+				watchInterval:      tc.fields.watchInterval,
+				cpuThreshold:       tc.fields.cpuThreshold,
+				memThreshold:       0.5, // 50%.
+				goroutineThreshold: 500,
+				cgroupQueryer:      mockCgroupsQueryer,
+				runtimeQueryer:     mockRuntimeQueryer,
+				profiler:           mockProfiler,
+				reporter:           mockReporter,
+				reportBoth:         tc.fields.reportAll,
+				disableMemProf:     tc.fields.disableMemProf,
+				stopC:              tc.fields.stopC,
 			}
-			return nil
+
+			tc.mockFunc(mockCgroupsQueryer, mockRuntimeQueryer, mockProfiler, mockReporter)
+
+			go ap.watchCPUUsage()
+			defer ap.stop()
+
+			// Wait for profiling and reporting.
+			time.Sleep(1050 * time.Millisecond)
 		})
-
-	ap := newTestAp(t, mockReporter)
-	ap.cgroupQueryer = mockCG
-	ap.runtimeQueryer = mockRT
-	ap.profiler = mockProf
-	ap.reportAll = true
-	ap.minConsecutiveOverThreshold = 1000
-	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
-	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
-	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})
-	t.Cleanup(func() { ap.stop() })
-
-	// Only CPU is over threshold; reportAll should cascade to Mem and Goroutine too.
-	waitFor(t, func() bool {
-		return cpuCnt.Load() > 0 && memCnt.Load() > 0 && goCnt.Load() > 0
-	}, 2*time.Second)
-	if cpuCnt.Load() == 0 || memCnt.Load() == 0 || goCnt.Load() == 0 {
-		t.Errorf("ReportAll should cascade cpu=%d mem=%d goroutine=%d",
-			cpuCnt.Load(), memCnt.Load(), goCnt.Load())
 	}
 }
 
-// -------------------------------------------------------------------
-// User metric: trigger, independence, interval, nil reader, defaults
-// -------------------------------------------------------------------
-
-func TestUserMetric_trigger(t *testing.T) {
+func TestAutoPprof_watchMemUsage(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	var infoSeen report.ReportInfo
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
-			infoSeen = info
-			reported.Add(1)
-			return nil
-		})
 
-	fm := &fakeMetric{
-		nameVal:      "mycustom",
-		thresholdVal: 10,
-		intervalVal:  20 * time.Millisecond,
-		queryFn:      func() (float64, error) { return 42, nil },
-		collectFn: func(v float64) (CollectResult, error) {
-			return CollectResult{
-				Reader:   bytes.NewReader([]byte("custom-bytes")),
-				Filename: "user.dump",
-				Comment:  "user comment",
-			}, nil
-		},
+	var (
+		profiled bool
+		reported bool
+	)
+
+	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+	mockQueryer.EXPECT().
+		MemUsage().
+		AnyTimes().
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.3, nil
+			},
+		)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileHeap().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiled = true
+				return []byte("prof"), nil
+			},
+		)
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
+				reported = true
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableCPUProf: true,
+		watchInterval:  1 * time.Second,
+		memThreshold:   0.2, // 20%.
+		cgroupQueryer:  mockQueryer,
+		profiler:       mockProfiler,
+		reporter:       mockReporter,
+		stopC:          make(chan struct{}),
 	}
-	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
+
+	go ap.watchMemUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
-
-	if infoSeen.MetricName != "mycustom" || infoSeen.Filename != "user.dump" ||
-		infoSeen.Comment != "user comment" || infoSeen.Value != 42 ||
-		infoSeen.Threshold != 10 {
-		t.Errorf("unexpected info: %+v", infoSeen)
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if !profiled {
+		t.Errorf("mem usage is not profiled")
+	}
+	if !reported {
+		t.Errorf("mem usage is not reported")
 	}
 }
 
-func TestUserMetric_independent_noCascade(t *testing.T) {
+func TestAutoPprof_watchMemUsage_consecutive(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
-	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.1, nil)
-	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
-	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1)
-	mockProf := NewMockprofiler(ctrl)
 
-	var names []string
-	var mu sync.Mutex
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+	var (
+		profiledCnt int
+		reportedCnt int
+	)
+
+	mockQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+	mockQueryer.EXPECT().
+		MemUsage().
 		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
-			mu.Lock()
-			names = append(names, info.MetricName)
-			mu.Unlock()
-			return nil
-		})
+		DoAndReturn(
+			func() (float64, error) {
+				return 0.3, nil
+			},
+		)
 
-	ap := newTestAp(t, mockReporter)
-	ap.cgroupQueryer = mockCG
-	ap.runtimeQueryer = mockRT
-	ap.profiler = mockProf
-	ap.reportAll = true // confirms cascade is limited to built-in
-	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileHeap().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiledCnt++
+				return []byte("prof"), nil
+			},
+		)
 
-	fm := &fakeMetric{
-		nameVal: "customonly", thresholdVal: 10, intervalVal: 20 * time.Millisecond,
-		queryFn: func() (float64, error) { return 100, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("b"))}, nil
-		},
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportHeapProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.MemInfo) error {
+				reportedCnt++
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableCPUProf:              true,
+		watchInterval:               1 * time.Second,
+		memThreshold:                0.2, // 20%.
+		minConsecutiveOverThreshold: 3,
+		cgroupQueryer:               mockQueryer,
+		profiler:                    mockProfiler,
+		reporter:                    mockReporter,
+		stopC:                       make(chan struct{}),
 	}
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
+
+	go ap.watchMemUsage()
 	t.Cleanup(func() { ap.stop() })
 
-	waitFor(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, n := range names {
-			if n == "customonly" {
-				return true
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 2nd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 3rd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("mem usage is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("mem usage is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 4th time. Now it should be profiled and reported.
+	if profiledCnt != 2 {
+		t.Errorf("mem usage is profiled %d times, want 2", profiledCnt)
+	}
+	if reportedCnt != 2 {
+		t.Errorf("mem usage is reported %d times, want 2", reportedCnt)
+	}
+}
+
+func TestAutoPprof_watchMemUsage_reportAll(t *testing.T) {
+	type fields struct {
+		watchInterval        time.Duration
+		memThreshold         float64
+		reportAll            bool
+		disableCPUProf       bool
+		disableGoroutineProf bool
+		stopC                chan struct{}
+	}
+	testCases := []struct {
+		name     string
+		fields   fields
+		mockFunc func(*queryer.MockCgroupsQueryer, *queryer.MockRuntimeQueryer, *Mockprofiler, *report.MockReporter)
+	}{
+		{
+			name: "reportAll: true",
+			fields: fields{
+				watchInterval:        1 * time.Second,
+				memThreshold:         0.5, // 50%.
+				reportAll:            true,
+				disableCPUProf:       false,
+				disableGoroutineProf: false,
+				stopC:                make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockCgroupsQueryer.EXPECT().
+						CPUUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 500,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: true, disableCPUProf: true",
+			fields: fields{
+				watchInterval:        1 * time.Second,
+				memThreshold:         0.5, // 50%.
+				reportAll:            true,
+				disableCPUProf:       true,
+				disableGoroutineProf: false,
+				stopC:                make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 500,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: false",
+			fields: fields{
+				watchInterval:        1 * time.Second,
+				memThreshold:         0.5, // 50%.
+				reportAll:            false,
+				disableCPUProf:       false,
+				disableGoroutineProf: false,
+				stopC:                make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.6, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.6 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			mockCgroupsQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+			mockRuntimeQueryer := queryer.NewMockRuntimeQueryer(ctrl)
+			mockProfiler := NewMockprofiler(ctrl)
+			mockReporter := report.NewMockReporter(ctrl)
+
+			ap := &autoPprof{
+				watchInterval:      tc.fields.watchInterval,
+				cpuThreshold:       0.5, // 50%.
+				memThreshold:       tc.fields.memThreshold,
+				goroutineThreshold: 500,
+				cgroupQueryer:      mockCgroupsQueryer,
+				runtimeQueryer:     mockRuntimeQueryer,
+				profiler:           mockProfiler,
+				reporter:           mockReporter,
+				reportAll:          tc.fields.reportAll,
+				disableCPUProf:     tc.fields.disableCPUProf,
+				stopC:              tc.fields.stopC,
 			}
-		}
-		return false
-	}, time.Second)
 
-	mu.Lock()
-	defer mu.Unlock()
-	for _, n := range names {
-		if n == "cpu" {
-			t.Errorf("custom trigger caused cpu cascade: %v", names)
-			return
-		}
+			tc.mockFunc(mockCgroupsQueryer, mockRuntimeQueryer, mockProfiler, mockReporter)
+
+			go ap.watchMemUsage()
+			defer ap.stop()
+
+			// Wait for profiling and reporting.
+			time.Sleep(1050 * time.Millisecond)
+		})
 	}
 }
 
-func TestUserMetric_perMetricInterval(t *testing.T) {
+func TestAutoPprof_watchGoroutineCount(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
-			reported.Add(1)
-			return nil
-		})
 
-	fm := &fakeMetric{
-		nameVal: "fast", thresholdVal: 1,
-		intervalVal: 10 * time.Millisecond, // much faster than global
-		queryFn:     func() (float64, error) { return 10, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("b"))}, nil
+	var (
+		profiled bool
+		reported bool
+	)
+
+	mockQueryer := queryer.NewMockRuntimeQueryer(ctrl)
+	mockQueryer.EXPECT().
+		GoroutineCount().
+		AnyTimes().
+		DoAndReturn(
+			func() (int, error) {
+				return 200, nil
+			},
+		)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileGoroutine().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiled = true
+				return []byte("prof"), nil
+			},
+		)
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
+				reported = true
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableCPUProf:     true,
+		disableMemProf:     true,
+		watchInterval:      1 * time.Second,
+		goroutineThreshold: 100,
+		runtimeQueryer:     mockQueryer,
+		profiler:           mockProfiler,
+		reporter:           mockReporter,
+		stopC:              make(chan struct{}),
+	}
+
+	go ap.watchGoroutineCount()
+	t.Cleanup(func() { ap.stop() })
+
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if !profiled {
+		t.Errorf("goroutine count is not profiled")
+	}
+	if !reported {
+		t.Errorf("goroutine count is not reported")
+	}
+}
+
+func TestAutoPprof_watchGoroutineCount_consecutive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	var (
+		profiledCnt int
+		reportedCnt int
+	)
+
+	mockQueryer := queryer.NewMockRuntimeQueryer(ctrl)
+	mockQueryer.EXPECT().
+		GoroutineCount().
+		AnyTimes().
+		DoAndReturn(
+			func() (int, error) {
+				return 200, nil
+			},
+		)
+
+	mockProfiler := NewMockprofiler(ctrl)
+	mockProfiler.EXPECT().
+		profileGoroutine().
+		AnyTimes().
+		DoAndReturn(
+			func() ([]byte, error) {
+				profiledCnt++
+				return []byte("prof"), nil
+			},
+		)
+
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().
+		ReportGoroutineProfile(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(
+			func(_ context.Context, _ io.Reader, _ report.GoroutineInfo) error {
+				reportedCnt++
+				return nil
+			},
+		)
+
+	ap := &autoPprof{
+		disableCPUProf:              true,
+		disableMemProf:              true,
+		watchInterval:               1 * time.Second,
+		goroutineThreshold:          100,
+		minConsecutiveOverThreshold: 3,
+		runtimeQueryer:              mockQueryer,
+		profiler:                    mockProfiler,
+		reporter:                    mockReporter,
+		stopC:                       make(chan struct{}),
+	}
+
+	go ap.watchGoroutineCount()
+	t.Cleanup(func() { ap.stop() })
+
+	// Wait for profiling and reporting.
+	time.Sleep(1050 * time.Millisecond)
+	if profiledCnt != 1 {
+		t.Errorf("goroutine count is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("goroutine count is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 2nd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("goroutine count is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("goroutine count is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 3rd time. It shouldn't be profiled and reported.
+	if profiledCnt != 1 {
+		t.Errorf("goroutine count is profiled %d times, want 1", profiledCnt)
+	}
+	if reportedCnt != 1 {
+		t.Errorf("goroutine count is reported %d times, want 1", reportedCnt)
+	}
+
+	time.Sleep(1050 * time.Millisecond)
+	// 4th time. Now it should be profiled and reported.
+	if profiledCnt != 2 {
+		t.Errorf("goroutine count is profiled %d times, want 2", profiledCnt)
+	}
+	if reportedCnt != 2 {
+		t.Errorf("goroutine count is reported %d times, want 2", reportedCnt)
+	}
+}
+
+func TestAutoPprof_watchGoroutineCount_reportAll(t *testing.T) {
+	type fields struct {
+		watchInterval      time.Duration
+		goroutineThreshold int
+		reportAll          bool
+		disableCPUProf     bool
+		disableMemProf     bool
+		stopC              chan struct{}
+	}
+	testCases := []struct {
+		name     string
+		fields   fields
+		mockFunc func(*queryer.MockCgroupsQueryer, *queryer.MockRuntimeQueryer, *Mockprofiler, *report.MockReporter)
+	}{
+		{
+			name: "reportAll: true",
+			fields: fields{
+				watchInterval:      1 * time.Second,
+				goroutineThreshold: 100,
+				reportAll:          true,
+				disableCPUProf:     false,
+				disableMemProf:     false,
+				stopC:              make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 100,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockCgroupsQueryer.EXPECT().
+						CPUUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileCPU().
+						AnyTimes().
+						Return([]byte("cpu_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportCPUProfile(gomock.Any(), gomock.Any(), report.CPUInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: true, disableCPUProf: true",
+			fields: fields{
+				watchInterval:      1 * time.Second,
+				goroutineThreshold: 100,
+				reportAll:          true,
+				disableCPUProf:     true,
+				disableMemProf:     false,
+				stopC:              make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 100,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+
+					mockCgroupsQueryer.EXPECT().
+						MemUsage().
+						AnyTimes().
+						Return(0.2, nil),
+
+					mockProfiler.EXPECT().
+						profileHeap().
+						AnyTimes().
+						Return([]byte("mem_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportHeapProfile(gomock.Any(), gomock.Any(), report.MemInfo{
+							ThresholdPercentage: 0.5 * 100,
+							UsagePercentage:     0.2 * 100,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
+		},
+		{
+			name: "reportAll: false",
+			fields: fields{
+				watchInterval:      1 * time.Second,
+				goroutineThreshold: 100,
+				reportAll:          false,
+				disableCPUProf:     false,
+				disableMemProf:     false,
+				stopC:              make(chan struct{}),
+			},
+			mockFunc: func(mockCgroupsQueryer *queryer.MockCgroupsQueryer, mockRuntimeQueryer *queryer.MockRuntimeQueryer, mockProfiler *Mockprofiler, mockReporter *report.MockReporter) {
+				gomock.InOrder(
+					mockRuntimeQueryer.EXPECT().
+						GoroutineCount().
+						AnyTimes().
+						Return(200),
+
+					mockProfiler.EXPECT().
+						profileGoroutine().
+						AnyTimes().
+						Return([]byte("goroutine_prof"), nil),
+
+					mockReporter.EXPECT().
+						ReportGoroutineProfile(gomock.Any(), gomock.Any(), report.GoroutineInfo{
+							ThresholdCount: 100,
+							Count:          200,
+						}).
+						AnyTimes().
+						Return(nil),
+				)
+			},
 		},
 	}
-	ap := newTestAp(t, mockReporter)
-	ap.watchInterval = 10 * time.Second // global should be ignored
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ap.stop() })
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
 
-	waitFor(t, func() bool { return reported.Load() > 0 }, 500*time.Millisecond)
-}
+			mockCgroupsQueryer := queryer.NewMockCgroupsQueryer(ctrl)
+			mockRuntimeQueryer := queryer.NewMockRuntimeQueryer(ctrl)
+			mockProfiler := NewMockprofiler(ctrl)
+			mockReporter := report.NewMockReporter(ctrl)
 
-func TestUserMetric_nilReaderSkipsReporter(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	// If Report is ever called, the test fails.
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			ap := &autoPprof{
+				watchInterval:      tc.fields.watchInterval,
+				cpuThreshold:       0.5, // 50%.
+				memThreshold:       0.5, // 50%.
+				goroutineThreshold: tc.fields.goroutineThreshold,
+				cgroupQueryer:      mockCgroupsQueryer,
+				runtimeQueryer:     mockRuntimeQueryer,
+				profiler:           mockProfiler,
+				reporter:           mockReporter,
+				reportAll:          tc.fields.reportAll,
+				disableCPUProf:     tc.fields.disableCPUProf,
+				stopC:              tc.fields.stopC,
+			}
 
-	fm := &fakeMetric{
-		nameVal: "noreport", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn: func() (float64, error) { return 10, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: nil}, nil
-		},
-	}
-	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ap.stop() })
-	time.Sleep(80 * time.Millisecond)
-	// Test passes if the mock's Times(0) expectation is satisfied by gomock.
-}
+			tc.mockFunc(mockCgroupsQueryer, mockRuntimeQueryer, mockProfiler, mockReporter)
 
-func TestUserMetric_defaultFilenameComment(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	var info report.ReportInfo
-	var done atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, i report.ReportInfo) error {
-			info = i
-			done.Add(1)
-			return nil
+			go ap.watchGoroutineCount()
+			defer ap.stop()
+
+			// Wait for profiling and reporting.
+			time.Sleep(1050 * time.Millisecond)
 		})
-
-	fm := &fakeMetric{
-		nameVal: "defaults", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn: func() (float64, error) { return 10, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("x"))}, nil
-		},
-	}
-	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ap.stop() })
-
-	waitFor(t, func() bool { return done.Load() > 0 }, time.Second)
-	if !strings.Contains(info.Filename, "defaults.") || !strings.Contains(info.Filename, ".bin") {
-		t.Errorf("default Filename=%q not generated", info.Filename)
-	}
-	if !strings.Contains(info.Comment, "[defaults]") {
-		t.Errorf("default Comment=%q not generated", info.Comment)
 	}
 }
-
-// -------------------------------------------------------------------
-// Register lifecycle
-// -------------------------------------------------------------------
-
-func TestRegister_errNotStarted(t *testing.T) {
-	resetGlobal()
-	m := &fakeMetric{nameVal: "x", thresholdVal: 1,
-		queryFn: func() (float64, error) { return 0, nil }}
-	if err := Register(m); !errors.Is(err, ErrNotStarted) {
-		t.Errorf("want ErrNotStarted, got %v", err)
-	}
-}
-
-func TestRegister_stopsOnAutoPprofStop(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	var after atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
-			after.Add(1)
-			return nil
-		})
-
-	fm := &fakeMetric{nameVal: "gone", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn: func() (float64, error) { return 10, nil },
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("x"))}, nil
-		}}
-	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(fm); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool { return after.Load() > 0 }, time.Second)
-
-	ap.stop()
-	snap := after.Load()
-	time.Sleep(100 * time.Millisecond)
-	if delta := after.Load() - snap; delta != 0 {
-		t.Errorf("after Stop, got %d more reports", delta)
-	}
-}
-
-// -------------------------------------------------------------------
-// Query error terminates the watcher
-// -------------------------------------------------------------------
-
-func TestWatchMetric_queryErrorExitsWatcher(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	// Reporter must never be called; Query errored before any fire.
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
-
-	ap := newTestAp(t, mockReporter)
-
-	broken := &fakeMetric{nameVal: "boom", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn:   func() (float64, error) { return 0, errors.New("boom") },
-		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-	if err := ap.registerMetric(broken); err != nil {
-		t.Fatal(err)
-	}
-
-	// Give the ticker one or two fires then Stop should return promptly,
-	// proving the watcher exited on its own.
-	time.Sleep(60 * time.Millisecond)
-	ap.stop()
-	if n := broken.queryCalls.Load(); n < 1 {
-		t.Errorf("expected at least one Query call, got %d", n)
-	}
-}
-
-// -------------------------------------------------------------------
-// Stop idempotency
-// -------------------------------------------------------------------
-
-func TestStop_idempotent(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	ap := newTestAp(t, mockReporter)
-	ap.stop()
-	ap.stop() // must not panic (sync.Once)
-}
-
-// -------------------------------------------------------------------
-// Concurrency: Register under -race
-// -------------------------------------------------------------------
-
-func TestRegister_concurrent(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-
-	ap := newTestAp(t, mockReporter)
-	t.Cleanup(func() { ap.stop() })
-
-	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			name := fmt.Sprintf("m%d", id)
-			m := &fakeMetric{nameVal: name, thresholdVal: 1, intervalVal: 10 * time.Millisecond,
-				queryFn:   func() (float64, error) { return 0, nil },
-				collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-			_ = ap.registerMetric(m)
-		}(i)
-	}
-	wg.Wait()
-}
-
-// -------------------------------------------------------------------
-// NewMetric nil-function defense
-// -------------------------------------------------------------------
-
-func TestNewMetric_nilQueryCollect(t *testing.T) {
-	m := NewMetric("x", 0, 0, nil, nil)
-	if _, err := m.Query(); !errors.Is(err, ErrInvalidMetric) {
-		t.Errorf("Query with nil fn should be ErrInvalidMetric, got %v", err)
-	}
-	if _, err := m.Collect(0); !errors.Is(err, ErrInvalidMetric) {
-		t.Errorf("Collect with nil fn should be ErrInvalidMetric, got %v", err)
-	}
-}
-
-// -------------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------------
-
-func waitFor(t *testing.T, cond func() bool, total time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(total)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("condition not met within %v", total)
-}
-
-// -------------------------------------------------------------------
-// Benchmarks — measure overhead of watching vs. a bare workload.
-// -------------------------------------------------------------------
 
 func fib(n int) int64 {
 	if n <= 1 {
 		return int64(n)
 	}
 	return fib(n-1) + fib(n-2)
-}
-
-func fibAsync(n int) int64 {
-	if n <= 1 {
-		return int64(n)
-	}
-	var (
-		v  int64
-		m  sync.Mutex
-		wg sync.WaitGroup
-	)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		m.Lock()
-		defer m.Unlock()
-		v = fibAsync(n-1) + fibAsync(n-2)
-	}()
-	wg.Wait()
-	return v
 }
 
 func BenchmarkLightJob(b *testing.B) {
@@ -701,9 +1305,10 @@ func BenchmarkLightJob(b *testing.B) {
 }
 
 func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
-	qryer, _ := queryer.NewCgroupQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewCgroupQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
@@ -715,9 +1320,10 @@ func BenchmarkLightJobWithWatchCPUUsage(b *testing.B) {
 }
 
 func BenchmarkLightJobWithWatchMemUsage(b *testing.B) {
-	qryer, _ := queryer.NewCgroupQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewCgroupQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
@@ -735,9 +1341,10 @@ func BenchmarkHeavyJob(b *testing.B) {
 }
 
 func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
-	qryer, _ := queryer.NewCgroupQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewCgroupQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
@@ -749,9 +1356,10 @@ func BenchmarkHeavyJobWithWatchCPUUsage(b *testing.B) {
 }
 
 func BenchmarkHeavyJobWithWatchMemUsage(b *testing.B) {
-	qryer, _ := queryer.NewCgroupQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewCgroupQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
@@ -762,6 +1370,30 @@ func BenchmarkHeavyJobWithWatchMemUsage(b *testing.B) {
 	}
 }
 
+func fibAsync(n int) int64 {
+	if n <= 1 {
+		return int64(n)
+	}
+
+	var (
+		v  int64
+		m  sync.Mutex
+		wg sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		m.Lock()
+		defer m.Unlock()
+		v = fibAsync(n-1) + fibAsync(n-2)
+	}()
+	wg.Wait()
+
+	return v
+}
+
 func BenchmarkLightAsyncJob(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		fibAsync(10)
@@ -769,9 +1401,10 @@ func BenchmarkLightAsyncJob(b *testing.B) {
 }
 
 func BenchmarkLightAsyncJobWithWatchGoroutineCount(b *testing.B) {
-	qryer, _ := queryer.NewRuntimeQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewRuntimeQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:
@@ -789,9 +1422,10 @@ func BenchmarkHeavyAsyncJob(b *testing.B) {
 }
 
 func BenchmarkHeavyAsyncJobWithWatchGoroutineCount(b *testing.B) {
-	qryer, _ := queryer.NewRuntimeQueryer()
-	ticker := time.NewTicker(defaultWatchInterval)
-	defer ticker.Stop()
+	var (
+		qryer, _ = queryer.NewRuntimeQueryer()
+		ticker   = time.NewTicker(defaultWatchInterval)
+	)
 	for i := 0; i < b.N; i++ {
 		select {
 		case <-ticker.C:

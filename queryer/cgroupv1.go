@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/containerd/cgroups"
@@ -31,11 +30,7 @@ type cgroupV1 struct {
 
 	cpuQuota float64
 
-	// qMu serializes access to q — the CPU-usage snapshot queue —
-	// because CPUUsage may be called concurrently (watcher tick and
-	// the ReportAll cascade path can land on the same queryer).
-	qMu sync.Mutex
-	q   cpuUsageSnapshotQueuer
+	q cpuUsageSnapshotQueuer
 }
 
 func newCgroupsV1() *cgroupV1 {
@@ -55,10 +50,6 @@ func (c *cgroupV1) CPUUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	c.qMu.Lock()
-	defer c.qMu.Unlock()
-
 	c.snapshotCPUUsage(stat.CPU.Usage.Total) // In nanoseconds.
 
 	// Calculate the usage only if there are enough snapshots.

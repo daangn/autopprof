@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"runtime/pprof"
-	"sync"
 	"time"
 )
 
@@ -24,12 +23,6 @@ type defaultProfiler struct {
 	// the enough cpu profiling data.
 	// Default: 10s.
 	cpuProfilingDuration time.Duration
-
-	// cpuMu serializes profileCPU calls. pprof.StartCPUProfile is a
-	// process-wide singleton — concurrent invocations would make the
-	// second one fail immediately. With ReportAll a cascade path can
-	// land on CPU at the same tick as its own watcher, so we gate it.
-	cpuMu sync.Mutex
 }
 
 func newDefaultProfiler(duration time.Duration) *defaultProfiler {
@@ -39,9 +32,6 @@ func newDefaultProfiler(duration time.Duration) *defaultProfiler {
 }
 
 func (p *defaultProfiler) profileCPU() ([]byte, error) {
-	p.cpuMu.Lock()
-	defer p.cpuMu.Unlock()
-
 	var (
 		buf bytes.Buffer
 		w   = bufio.NewWriter(&buf)

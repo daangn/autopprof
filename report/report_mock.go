@@ -35,16 +35,44 @@ func (m *MockReporter) EXPECT() *MockReporterMockRecorder {
 	return m.recorder
 }
 
-// Report mocks base method.
-func (m *MockReporter) Report(ctx context.Context, r io.Reader, info ReportInfo) error {
+// ReportCPUProfile mocks base method.
+func (m *MockReporter) ReportCPUProfile(ctx context.Context, r io.Reader, ci CPUInfo) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Report", ctx, r, info)
+	ret := m.ctrl.Call(m, "ReportCPUProfile", ctx, r, ci)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// Report indicates an expected call of Report.
-func (mr *MockReporterMockRecorder) Report(ctx, r, info interface{}) *gomock.Call {
+// ReportCPUProfile indicates an expected call of ReportCPUProfile.
+func (mr *MockReporterMockRecorder) ReportCPUProfile(ctx, r, ci interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporter)(nil).Report), ctx, r, info)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportCPUProfile", reflect.TypeOf((*MockReporter)(nil).ReportCPUProfile), ctx, r, ci)
+}
+
+// ReportGoroutineProfile mocks base method.
+func (m *MockReporter) ReportGoroutineProfile(ctx context.Context, r io.Reader, gi GoroutineInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportGoroutineProfile", ctx, r, gi)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportGoroutineProfile indicates an expected call of ReportGoroutineProfile.
+func (mr *MockReporterMockRecorder) ReportGoroutineProfile(ctx, r, gi interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportGoroutineProfile", reflect.TypeOf((*MockReporter)(nil).ReportGoroutineProfile), ctx, r, gi)
+}
+
+// ReportHeapProfile mocks base method.
+func (m *MockReporter) ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportHeapProfile", ctx, r, mi)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportHeapProfile indicates an expected call of ReportHeapProfile.
+func (mr *MockReporterMockRecorder) ReportHeapProfile(ctx, r, mi interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportHeapProfile", reflect.TypeOf((*MockReporter)(nil).ReportHeapProfile), ctx, r, mi)
 }

@@ -7,36 +7,45 @@ import (
 
 //go:generate mockgen -source=report.go -destination=report_mock.go -package=report
 
-// ReportInfo carries structured metadata about a report so Reporter
-// implementations can route or re-format without parsing filenames
-// or comments.
-type ReportInfo struct {
-	// MetricName is "cpu", "mem", "goroutine", or the user-supplied
-	// name of a Metric registered via autopprof.Register /
-	// Option.Metrics.
-	MetricName string
+const (
+	// CPUProfileFilenameFmt is the filename format for the CPU profile.
+	// pprof.<app>.<hostname>.samples.cpu.<report_time>.pprof.
+	CPUProfileFilenameFmt = "pprof.%s.%s.samples.cpu.%s.pprof"
 
-	// Filename is what autopprof chose for the upload. If the Metric
-	// returned a non-empty Filename via CollectResult it is used as-is;
-	// otherwise autopprof fills in a default.
-	Filename string
+	// HeapProfileFilenameFmt is the filename format for the heap profile.
+	// pprof.<app>.<hostname>.alloc_objects.alloc_space.inuse_objects.inuse_space.<report_time>.pprof.
+	HeapProfileFilenameFmt = "pprof.%s.%s.alloc_objects.alloc_space.inuse_objects.inuse_space.%s.pprof"
 
-	// Comment is the human-readable message associated with the report.
-	// Same filling rule as Filename.
-	Comment string
+	// GoroutineProfileFilenameFmt is the filename format for the goroutine profile.
+	// pprof.<app>.<hostname>.goroutine.<report_time>.pprof.
+	GoroutineProfileFilenameFmt = "pprof.%s.%s.goroutine.%s.pprof"
+)
 
-	// Value is the latest Query() value that triggered this report.
-	Value float64
+// Reporter is responsible for reporting the profiling report to the destination.
+type Reporter interface {
+	// ReportCPUProfile sends the CPU profiling data to the specific destination.
+	ReportCPUProfile(ctx context.Context, r io.Reader, ci CPUInfo) error
 
-	// Threshold is the Metric's configured threshold.
-	Threshold float64
+	// ReportHeapProfile sends the heap profiling data to the specific destination.
+	ReportHeapProfile(ctx context.Context, r io.Reader, mi MemInfo) error
+
+	// ReportGoroutineProfile sends the goroutine profiling data to the specific destination.
+	ReportGoroutineProfile(ctx context.Context, r io.Reader, gi GoroutineInfo) error
 }
 
-// Reporter sends a single profile/payload to its destination. Every
-// Metric (built-in CPU/Mem/Goroutine or user-defined) routes through
-// this one method. The caller (autopprof) provides a preformatted
-// filename/comment via Metric.Collect, plus structured metadata in
-// ReportInfo so the Reporter can decide how to present the message.
-type Reporter interface {
-	Report(ctx context.Context, r io.Reader, info ReportInfo) error
+// CPUInfo is the CPU usage information.
+type CPUInfo struct {
+	ThresholdPercentage float64
+	UsagePercentage     float64
+}
+
+// MemInfo is the memory usage information.
+type MemInfo struct {
+	ThresholdPercentage float64
+	UsagePercentage     float64
+}
+
+type GoroutineInfo struct {
+	ThresholdCount int
+	Count          int
 }

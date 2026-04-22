@@ -1,4 +1,4 @@
-module github.com/daangn/autopprof/v2
+module github.com/daangn/autopprof
 
 go 1.19
 
