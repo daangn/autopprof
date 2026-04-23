@@ -34,9 +34,7 @@ type cgroupV2 struct {
 
 	cpuQuota float64
 
-	// q is the CPU-usage snapshot queue. The queue is goroutine-safe
-	// internally, so concurrent CPUUsage callers (watcher tick +
-	// ReportAll cascade) don't need external serialization.
+	// q is the CPU-usage snapshot queue.
 	q cpuUsageSnapshotQueuer
 }
 
