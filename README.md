@@ -104,7 +104,12 @@ _ = autopprof.Register(autopprof.NewMetric(
 ```
 
 The names `cpu`, `mem`, and `goroutine` are reserved for the built-in metrics.
-User metrics do **not** participate in `ReportAll` cascade.
+User metrics do **not** participate in the built-in cascade.
+
+A built-in breach reports every other enabled built-in in addition to the
+triggering one. Set `DisableCPUProf`, `DisableMemProf`, or
+`DisableGoroutineProf` to opt a built-in out — it leaves the watcher and
+the cascade in one step.
 
 ## Migrating from v1 to v2
 
@@ -129,19 +134,20 @@ go get github.com/daangn/autopprof/v2
 
 | v1 | v2 |
 |---|---|
-| `ReportBoth bool` | **Removed.** Use `ReportAll bool`. |
+| `ReportBoth bool` | **Removed.** Cascade is always on for enabled built-ins. |
+| `ReportAll bool`  | **Removed.** Cascade is always on for enabled built-ins. |
 | *(n/a)* | `App string` — the `"<app>"` segment of built-in filenames. Defaults to `"autopprof"` when empty. |
 | *(n/a)* | `Metrics []Metric` — user-defined metrics to register at `Start`. |
 
 All other fields (`CPUThreshold`, `MemThreshold`, `GoroutineThreshold`,
-`Disable*Prof`, `ReportAll`, `Reporter`) are unchanged.
+`Disable*Prof`, `Reporter`) are unchanged. Disable individual built-ins
+via `Disable*Prof` — they're excluded from the cascade as well.
 
 ```diff
  autopprof.Start(autopprof.Option{
 +    App:          "YOUR_APP_NAME",
      CPUThreshold: 0.8,
 -    ReportBoth:   true,
-+    ReportAll:    true,
      Reporter:     myReporter,
  })
 ```
@@ -200,10 +206,12 @@ Removed types from the `report` package: `CPUInfo`, `MemInfo`, `GoroutineInfo`,
 
 ### 5. Bug fixes carried in v2
 
-- `Option.ReportAll` and `Option.DisableGoroutineProf` were silently ignored
-  in v1 (the values weren't assigned to the internal struct at `Start` time).
-  They now take effect correctly, which may change observed behavior for
-  callers relying on those flags.
+- `Option.DisableGoroutineProf` was silently ignored in v1 (the value
+  wasn't assigned to the internal struct at `Start` time). It now takes
+  effect correctly, which may change observed behavior for callers
+  relying on the flag.
+- Cascade (the v1 `ReportAll: true` behavior) is now unconditional for
+  enabled built-ins; use `Disable*Prof` to opt specific metrics out.
 
 ### 6. New: custom metrics
 

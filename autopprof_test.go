@@ -285,10 +285,10 @@ func TestWatchMetric_debounce(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Cascade (reportAll)
+// Cascade
 // -------------------------------------------------------------------
 
-func TestCascadeBuiltIn_reportAll(t *testing.T) {
+func TestCascadeBuiltIn(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
 	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil)
@@ -320,19 +320,18 @@ func TestCascadeBuiltIn_reportAll(t *testing.T) {
 	ap.cgroupQueryer = mockCG
 	ap.runtimeQueryer = mockRT
 	ap.profiler = mockProf
-	ap.reportAll = true
 	ap.minConsecutiveOverThreshold = 1000
 	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
 	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
 	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})
 	t.Cleanup(func() { ap.stop() })
 
-	// Only CPU is over threshold; reportAll should cascade to Mem and Goroutine too.
+	// Only CPU is over threshold; cascade should fire Mem and Goroutine too.
 	waitFor(t, func() bool {
 		return cpuCnt.Load() > 0 && memCnt.Load() > 0 && goCnt.Load() > 0
 	}, 2*time.Second)
 	if cpuCnt.Load() == 0 || memCnt.Load() == 0 || goCnt.Load() == 0 {
-		t.Errorf("ReportAll should cascade cpu=%d mem=%d goroutine=%d",
+		t.Errorf("cascade should fire all built-ins cpu=%d mem=%d goroutine=%d",
 			cpuCnt.Load(), memCnt.Load(), goCnt.Load())
 	}
 }
@@ -406,7 +405,7 @@ func TestUserMetric_independent_noCascade(t *testing.T) {
 	ap.cgroupQueryer = mockCG
 	ap.runtimeQueryer = mockRT
 	ap.profiler = mockProf
-	ap.reportAll = true // confirms cascade is limited to built-in
+	// Built-in cascade must not pick up user metrics.
 	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
 
 	fm := &fakeMetric{

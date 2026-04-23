@@ -23,8 +23,6 @@ type autoPprof struct {
 	reporter report.Reporter
 	app      string
 
-	reportAll bool
-
 	disableCPUProf       bool
 	disableMemProf       bool
 	disableGoroutineProf bool
@@ -96,7 +94,6 @@ func start(opt Option) error {
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
 		reporter:                    opt.Reporter,
 		app:                         app,
-		reportAll:                   opt.ReportAll,
 		disableCPUProf:              opt.DisableCPUProf,
 		disableMemProf:              opt.DisableMemProf,
 		disableGoroutineProf:        opt.DisableGoroutineProf,
@@ -309,13 +306,10 @@ func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 	return ap.reporter.Report(ctx, result.Reader, info)
 }
 
-// cascadeBuiltIn reports the other built-in metrics when any built-in
-// breaches. Custom metrics stay independent. cascadedRunners is
-// read-only after Start, so no lock.
+// cascadeBuiltIn reports the other enabled built-in metrics whenever
+// any built-in breaches. Custom metrics stay independent.
+// cascadedRunners is read-only after Start, so no lock.
 func (ap *autoPprof) cascadeBuiltIn(triggered string) {
-	if !ap.reportAll {
-		return
-	}
 	for name, r := range ap.cascadedRunners {
 		if name == triggered {
 			continue

@@ -18,11 +18,17 @@ const (
 
 // Option is the configuration for autopprof.
 type Option struct {
-	// DisableCPUProf disables the CPU profiling.
+	// DisableCPUProf disables the CPU profiling. Disabled built-ins
+	// are also skipped by the cascade that fires when any other
+	// built-in breaches its threshold.
 	DisableCPUProf bool
-	// DisableMemProf disables the memory profiling.
+	// DisableMemProf disables the memory profiling. Disabled built-ins
+	// are also skipped by the cascade that fires when any other
+	// built-in breaches its threshold.
 	DisableMemProf bool
-	// DisableGoroutineProf disables the goroutine profiling.
+	// DisableGoroutineProf disables the goroutine profiling. Disabled
+	// built-ins are also skipped by the cascade that fires when any
+	// other built-in breaches its threshold.
 	DisableGoroutineProf bool
 
 	// CPUThreshold is the cpu usage threshold (between 0 and 1) to
@@ -39,11 +45,6 @@ type Option struct {
 	// the goroutine profiling. Autopprof starts goroutine profiling
 	// when the goroutine count is higher than this threshold.
 	GoroutineThreshold int
-
-	// ReportAll triggers reports for every enabled built-in profile
-	// when any of them exceeds its threshold. Disabled built-ins are
-	// skipped.
-	ReportAll bool
 
 	// Reporter is the reporter to send the profiling report. Must
 	// implement the report.Reporter interface.
