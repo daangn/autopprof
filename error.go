@@ -1,21 +1,27 @@
 package autopprof
 
-import "fmt"
+import "errors"
 
-// Errors.
 var (
-	ErrUnsupportedPlatform = fmt.Errorf(
+	ErrUnsupportedPlatform = errors.New(
 		"autopprof: unsupported platform (only Linux is supported)",
 	)
-	ErrInvalidCPUThreshold = fmt.Errorf(
+	ErrInvalidCPUThreshold = errors.New(
 		"autopprof: cpu threshold value must be between 0 and 1",
 	)
-	ErrInvalidMemThreshold = fmt.Errorf(
+	ErrInvalidMemThreshold = errors.New(
 		"autopprof: memory threshold value must be between 0 and 1",
 	)
-	ErrInvalidGoroutineThreshold = fmt.Errorf(
+	ErrInvalidGoroutineThreshold = errors.New(
 		"autopprof: goroutine threshold value must be greater than to 0",
 	)
-	ErrNilReporter         = fmt.Errorf("autopprof: Reporter can't be nil")
-	ErrDisableAllProfiling = fmt.Errorf("autopprof: all profiling is disabled")
+	ErrNilReporter         = errors.New("autopprof: Reporter can't be nil")
+	ErrDisableAllProfiling = errors.New("autopprof: all profiling is disabled")
+
+	ErrInvalidMetric = errors.New(
+		"autopprof: metric is invalid (nil, empty name, negative threshold/interval, or nil query/collect)",
+	)
+	ErrNotStarted = errors.New(
+		"autopprof: Start() must be called before Register",
+	)
 )
