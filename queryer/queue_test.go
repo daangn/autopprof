@@ -246,8 +246,8 @@ func TestCPUUsageSnapshotQueue_cap(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			q := tc.newQ()
-			if got := q.cap(); got != tc.want {
-				t.Errorf("cap() = %v, want %v", got, tc.want)
+			if got := cap(q.list); got != tc.want {
+				t.Errorf("cap(q.list) = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -292,8 +292,8 @@ func TestCPUUsageSnapshotQueue_len(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			q := tc.newQ()
-			if got := q.len(); got != tc.want {
-				t.Errorf("len() = %v, want %v", got, tc.want)
+			if got := len(q.list); got != tc.want {
+				t.Errorf("len(q.list) = %v, want %v", got, tc.want)
 			}
 		})
 	}

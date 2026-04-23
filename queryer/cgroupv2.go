@@ -10,7 +10,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	cgroupsv2 "github.com/containerd/cgroups/v2"
@@ -35,11 +34,10 @@ type cgroupV2 struct {
 
 	cpuQuota float64
 
-	// qMu serializes access to q — the CPU-usage snapshot queue —
-	// because CPUUsage may be called concurrently (watcher tick and
-	// the ReportAll cascade path can land on the same queryer).
-	qMu sync.Mutex
-	q   cpuUsageSnapshotQueuer
+	// q is the CPU-usage snapshot queue. The queue is goroutine-safe
+	// internally, so concurrent CPUUsage callers (watcher tick +
+	// ReportAll cascade) don't need external serialization.
+	q cpuUsageSnapshotQueuer
 }
 
 func newCgroupsV2() *cgroupV2 {
@@ -59,9 +57,6 @@ func (c *cgroupV2) CPUUsage() (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-
-	c.qMu.Lock()
-	defer c.qMu.Unlock()
 
 	c.snapshotCPUUsage(stat.CPU.UsageUsec) // In microseconds.
 
