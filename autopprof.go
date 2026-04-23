@@ -52,15 +52,28 @@ type metricRunner struct {
 	interval  time.Duration
 }
 
-// globalAp is the running instance, or nil before Start. Start/Stop
-// are expected at process init/shutdown only, so no atomic protection.
-var globalAp *autoPprof
+// globalAp is the running instance, or nil before Start. Access is
+// guarded by startOnce / stopOnce — Start and Stop each fire at most
+// once per process.
+var (
+	globalAp  *autoPprof
+	startOnce sync.Once
+	startErr  error
+	stopOnce  sync.Once
+)
 
-// Start configures and runs the autopprof process. Call it once at
-// process startup. Start/Stop/Register are not guarded against
-// concurrent use — callers should not invoke them from multiple
-// goroutines.
+// Start configures and runs the autopprof process. It executes at
+// most once per process — subsequent calls return the same error (or
+// nil) as the first invocation. Safe to call concurrently; later
+// callers block on the first one.
 func Start(opt Option) error {
+	startOnce.Do(func() {
+		startErr = start(opt)
+	})
+	return startErr
+}
+
+func start(opt Option) error {
 	cgroupQryer, err := queryer.NewCgroupQueryer()
 	if err != nil {
 		return err
@@ -109,13 +122,16 @@ func Start(opt Option) error {
 	return nil
 }
 
-// Stop stops the global autopprof process. Safe to call multiple times.
+// Stop stops the global autopprof process. It executes at most once
+// per process; subsequent calls are no-ops. Safe to call concurrently.
 func Stop() {
-	if globalAp == nil {
-		return
-	}
-	globalAp.stop()
-	globalAp = nil
+	stopOnce.Do(func() {
+		if globalAp == nil {
+			return
+		}
+		globalAp.stop()
+		globalAp = nil
+	})
 }
 
 // Register adds a user Metric to the running autopprof instance. The

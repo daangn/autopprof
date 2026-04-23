@@ -52,7 +52,12 @@ func (f *fakeMetric) Collect(v float64) (CollectResult, error) {
 
 // resetGlobal ensures test isolation — some tests Start() and don't
 // Stop() cleanly; others test CAS behavior that needs the slot empty.
-func resetGlobal() { globalAp = nil }
+func resetGlobal() {
+	globalAp = nil
+	startOnce = sync.Once{}
+	startErr = nil
+	stopOnce = sync.Once{}
+}
 
 // -------------------------------------------------------------------
 // Validation tests
