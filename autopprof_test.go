@@ -131,6 +131,7 @@ func newTestAp(t *testing.T, reporter report.Reporter) *autoPprof {
 		watchInterval:               20 * time.Millisecond,
 		minConsecutiveOverThreshold: 3,
 		reporter:                    reporter,
+		reportTimeout:               defaultReportTimeout,
 		cascadedRunners:             make(map[string]*metricRunner),
 		stopC:                       make(chan struct{}),
 	}

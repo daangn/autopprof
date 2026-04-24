@@ -14,6 +14,7 @@ const (
 	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
 	defaultMinConsecutiveOverThreshold = 12 // 12 * 5s == 1 minute
+	defaultReportTimeout               = 5 * time.Second
 )
 
 // Option is the configuration for autopprof.
@@ -50,6 +51,10 @@ type Option struct {
 	// implement the report.Reporter interface.
 	Reporter report.Reporter
 
+	// ReportTimeout is the per-call timeout passed to Reporter.Report
+	// as the ctx deadline. Defaults to 5s when left zero.
+	ReportTimeout time.Duration
+
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
 	// "<app>" segment. Defaults to "autopprof" when left empty.
 	App string
@@ -73,6 +78,9 @@ func (o Option) validate() error {
 	}
 	if o.GoroutineThreshold < 0 {
 		return ErrInvalidGoroutineThreshold
+	}
+	if o.ReportTimeout < 0 {
+		return ErrInvalidReportTimeout
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

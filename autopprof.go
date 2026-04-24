@@ -14,14 +14,13 @@ import (
 	"github.com/daangn/autopprof/v2/report"
 )
 
-const reportTimeout = 5 * time.Second
-
 type autoPprof struct {
 	watchInterval               time.Duration
 	minConsecutiveOverThreshold int
 
-	reporter report.Reporter
-	app      string
+	reporter      report.Reporter
+	reportTimeout time.Duration
+	app           string
 
 	disableCPUProf       bool
 	disableMemProf       bool
@@ -88,11 +87,16 @@ func start(opt Option) error {
 	if app == "" {
 		app = defaultApp
 	}
+	reportTimeout := defaultReportTimeout
+	if opt.ReportTimeout > 0 {
+		reportTimeout = opt.ReportTimeout
+	}
 	profr := newDefaultProfiler(defaultCPUProfilingDuration)
 	ap := &autoPprof{
 		watchInterval:               defaultWatchInterval,
 		minConsecutiveOverThreshold: defaultMinConsecutiveOverThreshold,
 		reporter:                    opt.Reporter,
+		reportTimeout:               reportTimeout,
 		app:                         app,
 		disableCPUProf:              opt.DisableCPUProf,
 		disableMemProf:              opt.DisableMemProf,
@@ -301,7 +305,7 @@ func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
 		info.Comment = defaultComment(runner.name, value, runner.threshold)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), reportTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ap.reportTimeout)
 	defer cancel()
 	return ap.reporter.Report(ctx, result.Reader, info)
 }
