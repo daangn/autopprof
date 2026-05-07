@@ -48,3 +48,40 @@ func (mr *MockReporterMockRecorder) Report(ctx, r, info interface{}) *gomock.Cal
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporter)(nil).Report), ctx, r, info)
 }
+
+// MockBatchReporter is a mock of BatchReporter interface.
+type MockBatchReporter struct {
+	ctrl     *gomock.Controller
+	recorder *MockBatchReporterMockRecorder
+}
+
+// MockBatchReporterMockRecorder is the mock recorder for MockBatchReporter.
+type MockBatchReporterMockRecorder struct {
+	mock *MockBatchReporter
+}
+
+// NewMockBatchReporter creates a new mock instance.
+func NewMockBatchReporter(ctrl *gomock.Controller) *MockBatchReporter {
+	mock := &MockBatchReporter{ctrl: ctrl}
+	mock.recorder = &MockBatchReporterMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockBatchReporter) EXPECT() *MockBatchReporterMockRecorder {
+	return m.recorder
+}
+
+// ReportBatch mocks base method.
+func (m *MockBatchReporter) ReportBatch(ctx context.Context, items []ReportItem) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportBatch", ctx, items)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReportBatch indicates an expected call of ReportBatch.
+func (mr *MockBatchReporterMockRecorder) ReportBatch(ctx, items interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportBatch", reflect.TypeOf((*MockBatchReporter)(nil).ReportBatch), ctx, items)
+}

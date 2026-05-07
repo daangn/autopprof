@@ -14,7 +14,7 @@ const (
 	defaultWatchInterval               = 5 * time.Second
 	defaultCPUProfilingDuration        = 10 * time.Second
 	defaultMinConsecutiveOverThreshold = 12 // 12 * 5s == 1 minute
-	defaultReportTimeout               = 5 * time.Second
+	defaultReportTimeout               = 30 * time.Second
 )
 
 // Option is the configuration for autopprof.
@@ -52,7 +52,9 @@ type Option struct {
 	Reporter report.Reporter
 
 	// ReportTimeout is the per-call timeout passed to Reporter.Report
-	// as the ctx deadline. Defaults to 5s when left zero.
+	// (and Reporter.ReportBatch when the cascade is active) as the ctx
+	// deadline. Defaults to 30s when left zero — sized for a CPU
+	// profile (10s collect) plus cascade companion uploads.
 	ReportTimeout time.Duration
 
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the

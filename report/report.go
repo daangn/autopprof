@@ -30,6 +30,12 @@ type ReportInfo struct {
 
 	// Threshold is the Metric's configured threshold.
 	Threshold float64
+
+	// TriggeredBy is empty for self-trigger reports. For built-in
+	// cascade companions it carries the name of the metric whose own
+	// threshold breach kicked off the cascade (e.g. "mem" when cpu is
+	// reported alongside a mem trigger).
+	TriggeredBy string
 }
 
 // Reporter sends a single profile/payload to its destination. Every
@@ -39,4 +45,17 @@ type ReportInfo struct {
 // ReportInfo so the Reporter can decide how to present the message.
 type Reporter interface {
 	Report(ctx context.Context, r io.Reader, info ReportInfo) error
+}
+
+// ReportItem is one entry in a cascade batch.
+type ReportItem struct {
+	Reader io.Reader
+	Info   ReportInfo
+}
+
+// BatchReporter is the optional cascade-aware extension. items[0] is
+// the trigger; items[1:] are cascade companions. Reporters that omit
+// this interface fall back to N sequential Report calls.
+type BatchReporter interface {
+	ReportBatch(ctx context.Context, items []ReportItem) error
 }

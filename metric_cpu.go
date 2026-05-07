@@ -14,7 +14,8 @@ const (
 	MetricNameCPU = "cpu"
 
 	cpuProfileFilenameFmt = "pprof.%s.%s.samples.cpu.%s.pprof"
-	cpuCommentFmt         = ":rotating_light:[CPU] usage (*%.2f%%*) > threshold (*%.2f%%*)"
+	cpuTriggerCommentFmt  = ":rotating_light:[CPU] usage (*%.2f%%*) > threshold (*%.2f%%*)"
+	cpuCascadeCommentFmt  = ":mag:[CPU] usage (*%.2f%%*) — threshold (*%.2f%%*)"
 )
 
 type cpuMetric struct {
@@ -30,9 +31,13 @@ func (m *cpuMetric) Interval() time.Duration { return 0 }
 func (m *cpuMetric) Query() (float64, error) { return m.cg.CPUUsage() }
 
 func (m *cpuMetric) Collect(value float64) (CollectResult, error) {
+	commentFmt := cpuCascadeCommentFmt
+	if value >= m.threshold {
+		commentFmt = cpuTriggerCommentFmt
+	}
 	return collectProfile(
 		m.app, cpuProfileFilenameFmt,
 		m.p.profileCPU,
-		fmt.Sprintf(cpuCommentFmt, value*100, m.threshold*100),
+		fmt.Sprintf(commentFmt, value*100, m.threshold*100),
 	)
 }

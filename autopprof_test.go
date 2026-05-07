@@ -337,6 +337,220 @@ func TestCascadeBuiltIn(t *testing.T) {
 	}
 }
 
+// TestCascade_belowThreshold_emitsSnapshotComment_andTriggeredBy
+// verifies the truthful-cascade fix: when cpu fires (above threshold)
+// and cascades to mem (below threshold), the cascaded report's
+// Comment must use the em-dash snapshot form (no false ">"), and
+// info.TriggeredBy must carry the trigger origin name.
+func TestCascade_belowThreshold_emitsSnapshotComment_andTriggeredBy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
+	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil)  // above 0.5 → trigger
+	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.10, nil) // below 0.5 → cascade snapshot
+	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
+	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1) // below threshold → cascade snapshot
+	mockProf := NewMockprofiler(ctrl)
+	mockProf.EXPECT().profileCPU().AnyTimes().Return([]byte("c"), nil)
+	mockProf.EXPECT().profileHeap().AnyTimes().Return([]byte("h"), nil)
+	mockProf.EXPECT().profileGoroutine().AnyTimes().Return([]byte("g"), nil)
+
+	type seen struct {
+		comment     string
+		triggeredBy string
+	}
+	var (
+		mu       sync.Mutex
+		recorded = map[string]seen{}
+	)
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
+			mu.Lock()
+			recorded[info.MetricName] = seen{
+				comment:     info.Comment,
+				triggeredBy: info.TriggeredBy,
+			}
+			mu.Unlock()
+			return nil
+		})
+
+	ap := newTestAp(t, mockReporter)
+	ap.cgroupQueryer = mockCG
+	ap.runtimeQueryer = mockRT
+	ap.profiler = mockProf
+	ap.minConsecutiveOverThreshold = 1000
+	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})
+	t.Cleanup(func() { ap.stop() })
+
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		_, gotCPU := recorded["cpu"]
+		_, gotMem := recorded["mem"]
+		_, gotGo := recorded["goroutine"]
+		return gotCPU && gotMem && gotGo
+	}, 2*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	cpu := recorded["cpu"]
+	if !strings.Contains(cpu.comment, ":rotating_light:") || !strings.Contains(cpu.comment, ">") {
+		t.Errorf("cpu (trigger) Comment = %q, want alert-form with '>'", cpu.comment)
+	}
+	if cpu.triggeredBy != "" {
+		t.Errorf("cpu (trigger) TriggeredBy = %q, want empty", cpu.triggeredBy)
+	}
+
+	mem := recorded["mem"]
+	if !strings.Contains(mem.comment, ":mag:") || strings.Contains(mem.comment, ">") {
+		t.Errorf("mem (cascade snapshot) Comment = %q, want :mag: em-dash form (no '>')", mem.comment)
+	}
+	if !strings.Contains(mem.comment, "—") {
+		t.Errorf("mem (cascade snapshot) Comment = %q, want em-dash separator", mem.comment)
+	}
+	if mem.triggeredBy != "cpu" {
+		t.Errorf("mem TriggeredBy = %q, want %q", mem.triggeredBy, "cpu")
+	}
+
+	goinfo := recorded["goroutine"]
+	if !strings.Contains(goinfo.comment, ":mag:") || strings.Contains(goinfo.comment, ">") {
+		t.Errorf("goroutine (cascade snapshot) Comment = %q, want :mag: em-dash form (no '>')", goinfo.comment)
+	}
+	if goinfo.triggeredBy != "cpu" {
+		t.Errorf("goroutine TriggeredBy = %q, want %q", goinfo.triggeredBy, "cpu")
+	}
+}
+
+// fakeBatchReporter implements both Reporter and BatchReporter. Used
+// to verify autopprof prefers ReportBatch when available so the
+// underlying Reporter (e.g. SlackReporter) can present the cascade
+// as one unit (e.g. a Slack thread).
+type fakeBatchReporter struct {
+	reportCalls atomic.Int32
+	batchCalls  atomic.Int32
+	mu          sync.Mutex
+	lastBatch   []report.ReportItem
+}
+
+func (f *fakeBatchReporter) Report(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
+	f.reportCalls.Add(1)
+	return nil
+}
+
+func (f *fakeBatchReporter) ReportBatch(_ context.Context, items []report.ReportItem) error {
+	f.batchCalls.Add(1)
+	f.mu.Lock()
+	cp := make([]report.ReportItem, len(items))
+	for i, it := range items {
+		// Snapshot Info only — Reader is consumed once.
+		cp[i] = report.ReportItem{Info: it.Info}
+	}
+	f.lastBatch = cp
+	f.mu.Unlock()
+	return nil
+}
+
+// TestCascade_BatchReporter_preferred verifies dispatchBatch routes
+// the cascade through ReportBatch when the Reporter implements it,
+// in a single call carrying trigger + cascade companions.
+func TestCascade_BatchReporter_preferred(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
+	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil)
+	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.10, nil)
+	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
+	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1)
+	mockProf := NewMockprofiler(ctrl)
+	mockProf.EXPECT().profileCPU().AnyTimes().Return([]byte("c"), nil)
+	mockProf.EXPECT().profileHeap().AnyTimes().Return([]byte("h"), nil)
+	mockProf.EXPECT().profileGoroutine().AnyTimes().Return([]byte("g"), nil)
+
+	br := &fakeBatchReporter{}
+	ap := newTestAp(t, br)
+	ap.cgroupQueryer = mockCG
+	ap.runtimeQueryer = mockRT
+	ap.profiler = mockProf
+	ap.minConsecutiveOverThreshold = 1000
+	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})
+	t.Cleanup(func() { ap.stop() })
+
+	waitFor(t, func() bool { return br.batchCalls.Load() >= 1 }, 2*time.Second)
+
+	if got := br.reportCalls.Load(); got != 0 {
+		t.Errorf("Report was called %d times; expected 0 (BatchReporter should be preferred)", got)
+	}
+
+	br.mu.Lock()
+	items := br.lastBatch
+	br.mu.Unlock()
+	if len(items) != 3 {
+		t.Fatalf("batch len = %d, want 3 (trigger + 2 cascade)", len(items))
+	}
+	if items[0].Info.MetricName != "cpu" || items[0].Info.TriggeredBy != "" {
+		t.Errorf("items[0] = %+v, want trigger cpu with empty TriggeredBy", items[0].Info)
+	}
+	for _, it := range items[1:] {
+		if it.Info.TriggeredBy != "cpu" {
+			t.Errorf("cascade item %q TriggeredBy = %q, want %q",
+				it.Info.MetricName, it.Info.TriggeredBy, "cpu")
+		}
+	}
+}
+
+// TestCascade_realProfiler_cpuMuDoesNotDropReports exercises cascade
+// with the real defaultProfiler so two profileCPU calls (one from the
+// cpu watcher, one from the mem watcher's cascade) actually contend on
+// cpuMu. Lock contention serializes — it must not drop reports.
+func TestCascade_realProfiler_cpuMuDoesNotDropReports(t *testing.T) {
+	realProf := newDefaultProfiler(50 * time.Millisecond)
+
+	ctrl := gomock.NewController(t)
+	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
+	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil) // > 0.5
+	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.9, nil) // > 0.5
+	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
+	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1) // below threshold
+
+	var cpuCnt, memCnt, goCnt atomic.Int32
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
+			switch info.MetricName {
+			case "cpu":
+				cpuCnt.Add(1)
+			case "mem":
+				memCnt.Add(1)
+			case "goroutine":
+				goCnt.Add(1)
+			}
+			return nil
+		})
+
+	ap := newTestAp(t, mockReporter)
+	ap.profiler = realProf
+	ap.cgroupQueryer = mockCG
+	ap.runtimeQueryer = mockRT
+	ap.minConsecutiveOverThreshold = 1000 // suppress repeats so counts reflect cascade alone
+	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: realProf})
+	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: realProf})
+	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: realProf})
+	t.Cleanup(func() { ap.stop() })
+
+	// cpu (own watcher) + cpu (mem cascade) → cpuCnt >= 2
+	// mem (own watcher) + mem (cpu cascade) → memCnt >= 2
+	// goroutine only via cascades → goCnt >= 2
+	waitFor(t, func() bool {
+		return cpuCnt.Load() >= 2 && memCnt.Load() >= 2 && goCnt.Load() >= 2
+	}, 5*time.Second)
+}
+
 // -------------------------------------------------------------------
 // User metric: trigger, independence, interval, nil reader, defaults
 // -------------------------------------------------------------------

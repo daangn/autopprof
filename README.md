@@ -111,6 +111,79 @@ triggering one. Set `DisableCPUProf`, `DisableMemProf`, or
 `DisableGoroutineProf` to opt a built-in out — it leaves the watcher and
 the cascade in one step.
 
+## Custom Reporter
+
+A `Reporter` ships one profile + its metadata to a destination. The
+built-in `report.SlackReporter` uploads to a Slack channel; you can
+implement your own for any sink (HTTP endpoint, S3, log pipeline, …).
+
+```go
+type Reporter interface {
+    Report(ctx context.Context, r io.Reader, info report.ReportInfo) error
+}
+
+type ReportInfo struct {
+    MetricName  string  // "cpu" | "mem" | "goroutine" | <user-defined>
+    Filename    string
+    Comment     string
+    Value       float64
+    Threshold   float64
+    TriggeredBy string  // empty for self-trigger; cascade origin (e.g. "mem")
+}
+```
+
+`info.TriggeredBy` is empty when the report is the metric's own
+threshold breach, and carries the *origin metric name* when the report
+is a cascade companion. A receiver can route or label the message
+differently depending on which one it is. Built-in cascade companions
+already arrive with a snapshot-style `Comment` (no false `>`); the
+field is provided for Reporters that want richer routing or
+formatting.
+
+### Optional: `BatchReporter` for cascade grouping
+
+When a built-in metric breaches, autopprof gathers the trigger profile
+plus every cascade companion into a single batch. Reporters that
+implement the optional `BatchReporter` interface receive the batch as
+one call so they can present it as one unit (e.g. a Slack thread, an
+email digest, an aggregated log line):
+
+```go
+type BatchReporter interface {
+    ReportBatch(ctx context.Context, items []report.ReportItem) error
+}
+
+type ReportItem struct {
+    Reader io.Reader
+    Info   report.ReportInfo
+}
+```
+
+`items[0]` is always the trigger; `items[1:]` are the cascade
+companions in arbitrary order. autopprof prefers `ReportBatch` when
+the Reporter implements it, and falls back to N sequential `Report`
+calls otherwise — implementing `BatchReporter` is purely opt-in.
+
+The bundled `report.SlackReporter` implements both: `Report` posts a
+single message, `ReportBatch` posts the trigger and threads the
+cascade companions under it. Custom metrics never participate in the
+built-in cascade, so they always reach the Reporter via `Report`.
+
+```go
+type MyReporter struct{ /* ... */ }
+
+func (r *MyReporter) Report(ctx context.Context, reader io.Reader, info report.ReportInfo) error {
+    // Single-profile path.
+}
+
+// Optional: implement BatchReporter to receive cascade as one call.
+func (r *MyReporter) ReportBatch(ctx context.Context, items []report.ReportItem) error {
+    // items[0] is the trigger; items[1:] are cascade companions.
+    // Implement to group the message — otherwise omit this method
+    // and autopprof will call Report once per item.
+}
+```
+
 ## Migrating from v1 to v2
 
 v2 unifies CPU / Mem / Goroutine / Custom under a single `Metric` interface
@@ -176,11 +249,17 @@ via `Disable*Prof` — they're excluded from the cascade as well.
 +}
 +
 +type ReportInfo struct {
-+    MetricName string  // "cpu", "mem", "goroutine", or user-defined name
-+    Filename   string
-+    Comment    string
-+    Value      float64
-+    Threshold  float64
++    MetricName  string  // "cpu", "mem", "goroutine", or user-defined name
++    Filename    string
++    Comment     string
++    Value       float64
++    Threshold   float64
++    TriggeredBy string  // empty for self-trigger; cascade origin metric name
++}
++
++// Optional cascade-aware extension; see "Custom Reporter" above.
++type BatchReporter interface {
++    ReportBatch(ctx context.Context, items []ReportItem) error
 +}
 ```
 
@@ -212,6 +291,12 @@ Removed types from the `report` package: `CPUInfo`, `MemInfo`, `GoroutineInfo`,
   relying on the flag.
 - Cascade (the v1 `ReportAll: true` behavior) is now unconditional for
   enabled built-ins; use `Disable*Prof` to opt specific metrics out.
+- Cascade companion reports use a snapshot-style `Comment`
+  (`:mag:[CPU] usage (*X.XX%*) — threshold (*Y.YY%*)`) instead of the
+  alert-style `>`, so the message no longer falsely claims
+  `usage > threshold` when the cascaded metric is below threshold.
+  `info.TriggeredBy` carries the trigger origin (`"mem"`, etc.) for
+  Reporters that want explicit routing.
 
 ### 6. New: custom metrics
 

@@ -262,13 +262,18 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 				continue
 			}
 			if cnt == 0 {
-				if err := ap.fireReport(runner, value); err != nil {
-					log.Println(fmt.Errorf(
-						"autopprof: metric %q report failed: %w", runner.name, err,
-					))
-				}
 				if isBuiltin {
-					ap.cascadeBuiltIn(runner.name)
+					if err := ap.fireBuiltinCascade(runner, value); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: metric %q report failed: %w", runner.name, err,
+						))
+					}
+				} else {
+					if err := ap.fireReport(runner, value, ""); err != nil {
+						log.Println(fmt.Errorf(
+							"autopprof: metric %q report failed: %w", runner.name, err,
+						))
+					}
 				}
 			}
 			cnt++
@@ -281,41 +286,46 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	}
 }
 
-func (ap *autoPprof) fireReport(runner *metricRunner, value float64) error {
-	result, err := runner.metric.Collect(value)
+// fireReport is the single-item path used by custom Metrics. Built-ins
+// route through fireBuiltinCascade instead so a BatchReporter sees the
+// cascade as one unit.
+func (ap *autoPprof) fireReport(runner *metricRunner, value float64, triggeredBy string) error {
+	item, ok, err := ap.buildItem(runner, value, triggeredBy)
 	if err != nil {
 		return fmt.Errorf("collect: %w", err)
 	}
-	if result.Reader == nil {
-		// Side-effect-only hook; nothing to ship.
+	if !ok {
 		return nil
 	}
-
-	info := report.ReportInfo{
-		MetricName: runner.name,
-		Filename:   result.Filename,
-		Comment:    result.Comment,
-		Value:      value,
-		Threshold:  runner.threshold,
-	}
-	if info.Filename == "" {
-		info.Filename = defaultFilename(runner.name)
-	}
-	if info.Comment == "" {
-		info.Comment = defaultComment(runner.name, value, runner.threshold)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), ap.reportTimeout)
+	ctx, cancel := ap.reportContext()
 	defer cancel()
-	return ap.reporter.Report(ctx, result.Reader, info)
+	return ap.reporter.Report(ctx, item.Reader, item.Info)
 }
 
-// cascadeBuiltIn reports the other enabled built-in metrics whenever
-// any built-in breaches. Custom metrics stay independent.
-// cascadedRunners is read-only after Start, so no lock.
-func (ap *autoPprof) cascadeBuiltIn(triggered string) {
+// reportContext returns the per-call context used for both
+// Report and ReportBatch.
+func (ap *autoPprof) reportContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), ap.reportTimeout)
+}
+
+// fireBuiltinCascade collects the trigger profile and every other
+// enabled built-in's profile into a single batch, then dispatches via
+// BatchReporter (preferred, e.g. SlackReporter threading) or falls
+// back to N sequential Report calls. cascadedRunners is read-only
+// after Start, so no lock.
+func (ap *autoPprof) fireBuiltinCascade(trigger *metricRunner, triggerValue float64) error {
+	items := make([]report.ReportItem, 0, len(ap.cascadedRunners))
+
+	triggerItem, ok, err := ap.buildItem(trigger, triggerValue, "")
+	if err != nil {
+		return fmt.Errorf("collect trigger %q: %w", trigger.name, err)
+	}
+	if ok {
+		items = append(items, triggerItem)
+	}
+
 	for name, r := range ap.cascadedRunners {
-		if name == triggered {
+		if name == trigger.name {
 			continue
 		}
 		value, err := r.metric.Query()
@@ -325,13 +335,76 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 			))
 			continue
 		}
-		if err := ap.fireReport(r, value); err != nil {
+		item, ok, err := ap.buildItem(r, value, trigger.name)
+		if err != nil {
 			log.Println(fmt.Errorf(
-				"autopprof: cascade report %q: %w", r.name, err,
+				"autopprof: cascade collect %q: %w", r.name, err,
+			))
+			continue
+		}
+		if !ok {
+			continue
+		}
+		items = append(items, item)
+	}
+
+	if len(items) == 0 {
+		return nil
+	}
+	return ap.dispatchBatch(items)
+}
+
+// dispatchBatch prefers BatchReporter so cascade-aware Reporters
+// (e.g. SlackReporter threading the cascade under the trigger) can
+// see the items together. Falls back to per-item Report otherwise.
+func (ap *autoPprof) dispatchBatch(items []report.ReportItem) error {
+	ctx, cancel := ap.reportContext()
+	defer cancel()
+
+	if br, ok := ap.reporter.(report.BatchReporter); ok {
+		return br.ReportBatch(ctx, items)
+	}
+	for _, it := range items {
+		if err := ap.reporter.Report(ctx, it.Reader, it.Info); err != nil {
+			log.Println(fmt.Errorf(
+				"autopprof: report %q: %w", it.Info.MetricName, err,
 			))
 		}
 	}
+	return nil
 }
+
+// buildItem turns a Collect result into a ReportItem, filling in
+// default Filename/Comment and stamping TriggeredBy. ok=false signals
+// "Reader is nil" — a side-effect-only Metric the Reporter should
+// skip entirely.
+func (ap *autoPprof) buildItem(
+	runner *metricRunner, value float64, triggeredBy string,
+) (report.ReportItem, bool, error) {
+	result, err := runner.metric.Collect(value)
+	if err != nil {
+		return report.ReportItem{}, false, err
+	}
+	if result.Reader == nil {
+		return report.ReportItem{}, false, nil
+	}
+	info := report.ReportInfo{
+		MetricName:  runner.name,
+		Filename:    result.Filename,
+		Comment:     result.Comment,
+		Value:       value,
+		Threshold:   runner.threshold,
+		TriggeredBy: triggeredBy,
+	}
+	if info.Filename == "" {
+		info.Filename = defaultFilename(runner.name)
+	}
+	if info.Comment == "" {
+		info.Comment = defaultComment(runner.name, value, runner.threshold)
+	}
+	return report.ReportItem{Reader: result.Reader, Info: info}, true, nil
+}
+
 
 // stop signals every watcher and blocks until they exit. wg.Wait
 // ensures Stop() doesn't return while pprof.StartCPUProfile is in
