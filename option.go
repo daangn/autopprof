@@ -7,14 +7,14 @@ import (
 )
 
 const (
-	defaultApp                         = "autopprof"
-	defaultCPUThreshold                = 0.75
-	defaultMemThreshold                = 0.75
-	defaultGoroutineThreshold          = 50000
-	defaultWatchInterval               = 5 * time.Second
-	defaultCPUProfilingDuration        = 10 * time.Second
-	defaultMinConsecutiveOverThreshold = 12 // 12 * 5s == 1 minute
-	defaultReportTimeout               = 5 * time.Second
+	defaultApp                  = "autopprof"
+	defaultCPUThreshold         = 0.75
+	defaultMemThreshold         = 0.75
+	defaultGoroutineThreshold   = 50000
+	defaultWatchInterval        = 5 * time.Second
+	defaultCPUProfilingDuration = 10 * time.Second
+	defaultReportCooldown       = 1 * time.Minute
+	defaultReportTimeout        = 5 * time.Second
 )
 
 // Option is the configuration for autopprof.
@@ -55,6 +55,21 @@ type Option struct {
 	// as the ctx deadline. Defaults to 5s when left zero.
 	ReportTimeout time.Duration
 
+	// WatchInterval is how often each metric is sampled against its
+	// threshold. It applies to the built-in CPU/Mem/Goroutine watchers
+	// and to any custom Metric that returns 0 from Interval(). Defaults
+	// to 5s when left zero.
+	WatchInterval time.Duration
+
+	// ReportCooldown is the minimum time before the same metric is
+	// reported again while it stays over threshold. A report still fires
+	// immediately on the first breach; subsequent reports for that metric
+	// are suppressed for this long. The cooldown is quantized to the
+	// metric's watch interval (rounded to the nearest tick, with a floor
+	// of one tick), so a metric is reported at most once per sample.
+	// Defaults to 1m when left zero.
+	ReportCooldown time.Duration
+
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
 	// "<app>" segment. Defaults to "autopprof" when left empty.
 	App string
@@ -81,6 +96,12 @@ func (o Option) validate() error {
 	}
 	if o.ReportTimeout < 0 {
 		return ErrInvalidReportTimeout
+	}
+	if o.WatchInterval < 0 {
+		return ErrInvalidWatchInterval
+	}
+	if o.ReportCooldown < 0 {
+		return ErrInvalidReportCooldown
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

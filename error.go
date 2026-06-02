@@ -18,6 +18,12 @@ var (
 	ErrInvalidReportTimeout = errors.New(
 		"autopprof: report timeout must be a non-negative duration",
 	)
+	ErrInvalidWatchInterval = errors.New(
+		"autopprof: watch interval must be a non-negative duration",
+	)
+	ErrInvalidReportCooldown = errors.New(
+		"autopprof: report cooldown must be a non-negative duration",
+	)
 	ErrNilReporter         = errors.New("autopprof: Reporter can't be nil")
 	ErrDisableAllProfiling = errors.New("autopprof: all profiling is disabled")
 

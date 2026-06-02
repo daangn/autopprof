@@ -107,6 +107,12 @@ func TestOption_validate(t *testing.T) {
 		{"negative interval",
 			Option{Reporter: stub, Metrics: []Metric{&fakeMetric{nameVal: "x", thresholdVal: 1, intervalVal: -time.Second}}},
 			ErrInvalidMetric},
+		{"negative WatchInterval",
+			Option{Reporter: stub, WatchInterval: -time.Second},
+			ErrInvalidWatchInterval},
+		{"negative ReportCooldown",
+			Option{Reporter: stub, ReportCooldown: -time.Second},
+			ErrInvalidReportCooldown},
 		{"valid custom metric",
 			Option{Reporter: stub, Metrics: []Metric{validMetric}},
 			nil},
@@ -120,7 +126,6 @@ func TestOption_validate(t *testing.T) {
 	}
 }
 
-
 // -------------------------------------------------------------------
 // Built-in Metric: watch loop & Reporter routing
 // -------------------------------------------------------------------
@@ -128,12 +133,12 @@ func TestOption_validate(t *testing.T) {
 func newTestAp(t *testing.T, reporter report.Reporter) *autoPprof {
 	t.Helper()
 	return &autoPprof{
-		watchInterval:               20 * time.Millisecond,
-		minConsecutiveOverThreshold: 3,
-		reporter:                    reporter,
-		reportTimeout:               defaultReportTimeout,
-		cascadedRunners:             make(map[string]*metricRunner),
-		stopC:                       make(chan struct{}),
+		watchInterval:   20 * time.Millisecond,
+		reportCooldown:  60 * time.Millisecond, // 3 ticks @20ms
+		reporter:        reporter,
+		reportTimeout:   defaultReportTimeout,
+		cascadedRunners: make(map[string]*metricRunner),
+		stopC:           make(chan struct{}),
 	}
 }
 
@@ -271,7 +276,7 @@ func TestWatchMetric_debounce(t *testing.T) {
 		},
 	}
 	ap := newTestAp(t, mockReporter)
-	ap.minConsecutiveOverThreshold = 3
+	ap.reportCooldown = 60 * time.Millisecond // debounce count 3 @20ms
 	if err := ap.registerMetric(fm); err != nil {
 		t.Fatal(err)
 	}
@@ -282,6 +287,39 @@ func TestWatchMetric_debounce(t *testing.T) {
 	got := reported.Load()
 	if got < 2 || got > 3 {
 		t.Errorf("expected 2-3 reports with debounce=3, got %d", got)
+	}
+}
+
+func TestNewRunner_reportCooldownToTickCount(t *testing.T) {
+	const global = 5 * time.Second
+	testCases := []struct {
+		name           string
+		metricInterval time.Duration // 0 => inherit global
+		cooldown       time.Duration
+		wantInterval   time.Duration
+		wantCount      int
+	}{
+		{"default 1m at 5s global", 0, time.Minute, global, 12},
+		{"2m at 5s", 0, 2 * time.Minute, global, 24},
+		{"metric interval overrides global", 10 * time.Second, time.Minute, 10 * time.Second, 6},
+		{"rounds to nearest up", 0, 13 * time.Second, global, 3},   // 2.6 -> 3
+		{"rounds to nearest down", 0, 12 * time.Second, global, 2}, // 2.4 -> 2
+		{"cooldown below interval floors to one", 0, time.Second, global, 1},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &fakeMetric{
+				nameVal: "m", thresholdVal: 1, intervalVal: tc.metricInterval,
+				queryFn: func() (float64, error) { return 0, nil },
+			}
+			r := newRunner(m, global, tc.cooldown)
+			if r.interval != tc.wantInterval {
+				t.Errorf("interval: want %v, got %v", tc.wantInterval, r.interval)
+			}
+			if r.minConsecutiveOverThreshold != tc.wantCount {
+				t.Errorf("count: want %d, got %d", tc.wantCount, r.minConsecutiveOverThreshold)
+			}
+		})
 	}
 }
 
@@ -321,7 +359,7 @@ func TestCascadeBuiltIn(t *testing.T) {
 	ap.cgroupQueryer = mockCG
 	ap.runtimeQueryer = mockRT
 	ap.profiler = mockProf
-	ap.minConsecutiveOverThreshold = 1000
+	ap.reportCooldown = 20 * time.Second // count 1000 @20ms — suppress repeats
 	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
 	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
 	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})

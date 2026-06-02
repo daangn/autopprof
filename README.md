@@ -32,6 +32,7 @@ package main
 import (
 	"errors"
 	"log"
+	"time"
 
 	"github.com/daangn/autopprof/v2"
 	"github.com/daangn/autopprof/v2/report"
@@ -39,9 +40,11 @@ import (
 
 func main() {
 	err := autopprof.Start(autopprof.Option{
-		App:          "YOUR_APP_NAME",
-		CPUThreshold: 0.8, // Default: 0.75.
-		MemThreshold: 0.8, // Default: 0.75.
+		App:            "YOUR_APP_NAME",
+		CPUThreshold:   0.8,              // Default: 0.75.
+		MemThreshold:   0.8,              // Default: 0.75.
+		WatchInterval:  10 * time.Second, // Default: 5s. How often each metric is sampled.
+		ReportCooldown: 5 * time.Minute,  // Default: 1m. Min gap before re-reporting the same metric.
 		Reporter: report.NewSlackReporter(
 			&report.SlackReporterOption{
 				Token:     "YOUR_TOKEN_HERE",
