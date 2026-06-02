@@ -61,6 +61,10 @@ func main() {
 			&report.SlackReporterOption{
 				Token:     "YOUR_TOKEN_HERE",
 				ChannelID: "REPORT_CHANNEL_ID",
+				// ThreadTTL groups this pod's reports into a single Slack
+				// thread for the window. Zero (the default) disables
+				// threading: each report is its own top-level message.
+				ThreadTTL: 5 * time.Minute,
 			},
 		),
 	})
