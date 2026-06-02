@@ -47,13 +47,6 @@ type metricRunner struct {
 	name      string
 	threshold float64
 	interval  time.Duration
-
-	// minConsecutiveOverThreshold is the number of consecutive
-	// over-threshold ticks to suppress after a report fires — the
-	// ReportCooldown converted to this runner's interval (rounded to the
-	// nearest tick, floor one). Cached at registration so the watch loop
-	// stays arithmetic-free.
-	minConsecutiveOverThreshold int
 }
 
 // globalAp is the running instance, or nil before Start. Access is
@@ -211,7 +204,7 @@ func (ap *autoPprof) registerBuiltinMetrics(opt Option) {
 }
 
 func (ap *autoPprof) registerBuiltIn(m Metric) {
-	runner := newRunner(m, ap.watchInterval, ap.reportCooldown)
+	runner := newRunner(m, ap.watchInterval)
 	ap.cascadedRunners[runner.name] = runner
 	ap.wg.Add(1)
 	go func() {
@@ -229,7 +222,7 @@ func (ap *autoPprof) registerMetric(m Metric) error {
 		return ErrNotStarted
 	default:
 	}
-	runner := newRunner(m, ap.watchInterval, ap.reportCooldown)
+	runner := newRunner(m, ap.watchInterval)
 	ap.wg.Add(1)
 	go func() {
 		defer ap.wg.Done()
@@ -239,37 +232,31 @@ func (ap *autoPprof) registerMetric(m Metric) error {
 }
 
 // newRunner caches Metric's meta values so the watch loop uses a
-// stable name/threshold/interval (and the derived cooldown tick count)
-// even if the implementation mutates them later.
-func newRunner(m Metric, globalInterval, cooldown time.Duration) *metricRunner {
+// stable name/threshold/interval even if the implementation mutates
+// them later.
+func newRunner(m Metric, globalInterval time.Duration) *metricRunner {
 	interval := m.Interval()
 	if interval == 0 {
 		interval = globalInterval
 	}
-	// Convert the wall-clock cooldown into this runner's tick count,
-	// rounded to the nearest tick with a floor of one so a metric is
-	// reported at most once per sample.
-	n := int((cooldown + interval/2) / interval)
-	if n < 1 {
-		n = 1
-	}
 	return &metricRunner{
-		metric:                      m,
-		name:                        m.Name(),
-		threshold:                   m.Threshold(),
-		interval:                    interval,
-		minConsecutiveOverThreshold: n,
+		metric:    m,
+		name:      m.Name(),
+		threshold: m.Threshold(),
+		interval:  interval,
 	}
 }
 
-// watchMetric runs the unified watch loop. minConsecutiveOverThreshold
-// debounces repeat fires: report on the first tick above threshold,
-// suppress until the counter drops below threshold or wraps around.
+// watchMetric runs the unified watch loop. reportCooldown debounces
+// repeat fires: report on the first tick above threshold, then suppress
+// further reports for that metric until the cooldown has elapsed.
+// Dropping below the threshold re-arms an immediate report on the next
+// breach.
 func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 
-	var cnt int
+	var lastReport time.Time
 	for {
 		select {
 		case <-ticker.C:
@@ -281,10 +268,11 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 				return
 			}
 			if value < runner.threshold {
-				cnt = 0
+				lastReport = time.Time{}
 				continue
 			}
-			if cnt == 0 {
+			now := time.Now()
+			if lastReport.IsZero() || now.Sub(lastReport) >= ap.reportCooldown {
 				if err := ap.fireReport(runner, value); err != nil {
 					log.Println(fmt.Errorf(
 						"autopprof: metric %q report failed: %w", runner.name, err,
@@ -293,10 +281,7 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 				if isBuiltin {
 					ap.cascadeBuiltIn(runner.name)
 				}
-			}
-			cnt++
-			if cnt >= runner.minConsecutiveOverThreshold {
-				cnt = 0
+				lastReport = now
 			}
 		case <-ap.stopC:
 			return

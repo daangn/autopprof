@@ -64,10 +64,10 @@ type Option struct {
 	// ReportCooldown is the minimum time before the same metric is
 	// reported again while it stays over threshold. A report still fires
 	// immediately on the first breach; subsequent reports for that metric
-	// are suppressed for this long. The cooldown is quantized to the
-	// metric's watch interval (rounded to the nearest tick, with a floor
-	// of one tick), so a metric is reported at most once per sample.
-	// Defaults to 1m when left zero.
+	// are suppressed until this much wall-clock time has elapsed. The
+	// elapsed check runs once per sample, so a metric is reported at most
+	// once per watch interval, and dropping below the threshold re-arms an
+	// immediate report on the next breach. Defaults to 1m when left zero.
 	ReportCooldown time.Duration
 
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
