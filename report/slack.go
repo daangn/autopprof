@@ -67,22 +67,33 @@ type SlackReporterOption struct {
 	// ThreadTTL groups all of this process's reports into a single Slack
 	// thread for the duration of the window, measured from when the
 	// thread was opened. Once the window elapses, the next report opens a
-	// fresh thread. Zero or negative (the default) disables threading:
-	// each report is posted as a separate top-level message, preserving
-	// the previous behavior.
+	// fresh thread.
 	//
-	// Enabling threading posts one extra header message per window to
-	// obtain a parent timestamp, because Slack's file upload API returns
-	// no timestamp to thread replies on.
+	// Zero (the default) applies defaultThreadTTL (1h). Set a negative
+	// value to disable threading, posting each report as a separate
+	// top-level message.
+	//
+	// Threading posts one extra header message per window to obtain a
+	// parent timestamp, because Slack's file upload API returns no
+	// timestamp to thread replies on.
 	ThreadTTL time.Duration
 }
 
+// defaultThreadTTL is the thread-grouping window applied when
+// SlackReporterOption.ThreadTTL is left zero. A negative ThreadTTL
+// disables threading.
+const defaultThreadTTL = time.Hour
+
 // NewSlackReporter returns the new SlackReporter.
 func NewSlackReporter(opt *SlackReporterOption) *SlackReporter {
+	threadTTL := opt.ThreadTTL
+	if threadTTL == 0 {
+		threadTTL = defaultThreadTTL
+	}
 	return &SlackReporter{
 		channelID: opt.ChannelID,
 		client:    slack.New(opt.Token),
-		threadTTL: opt.ThreadTTL,
+		threadTTL: threadTTL,
 		hostname:  hostname(),
 		clock:     realClock{},
 	}

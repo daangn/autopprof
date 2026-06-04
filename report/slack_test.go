@@ -123,6 +123,30 @@ func doReport(t *testing.T, r *SlackReporter) error {
 	})
 }
 
+func TestNewSlackReporter_ThreadTTLDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		opt  time.Duration
+		want time.Duration
+	}{
+		{"unset defaults to 1h", 0, time.Hour},
+		{"negative disables (preserved)", -time.Second, -time.Second},
+		{"custom is kept", 30 * time.Minute, 30 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewSlackReporter(&SlackReporterOption{
+				Token:     "x",
+				ChannelID: "C123",
+				ThreadTTL: tt.opt,
+			})
+			if r.threadTTL != tt.want {
+				t.Errorf("threadTTL = %v, want %v", r.threadTTL, tt.want)
+			}
+		})
+	}
+}
+
 func TestSlackReporter_FirstReportOpensThread(t *testing.T) {
 	clk := &fakeClock{t: time.Unix(1000, 0)}
 	f := &fakeSlackClient{postTS: []string{"100.1"}}
