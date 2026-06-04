@@ -387,6 +387,70 @@ func TestCascadeBuiltIn(t *testing.T) {
 	}
 }
 
+// TestCascade_commentBranching verifies that the trigger metric uses the
+// ":rotating_light: > threshold" alert form while cascade companions
+// whose value is below their own threshold use the ":mag: — threshold"
+// snapshot form. The cascade `>` claim would otherwise be false when
+// only one metric actually breached.
+func TestCascade_commentBranching(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockCG := queryer.NewMockCgroupsQueryer(ctrl)
+	mockCG.EXPECT().CPUUsage().AnyTimes().Return(0.9, nil) // trigger
+	mockCG.EXPECT().MemUsage().AnyTimes().Return(0.1, nil) // below threshold
+	mockRT := queryer.NewMockRuntimeQueryer(ctrl)
+	mockRT.EXPECT().GoroutineCount().AnyTimes().Return(1) // below threshold
+	mockProf := NewMockprofiler(ctrl)
+	mockProf.EXPECT().profileCPU().AnyTimes().Return([]byte("c"), nil)
+	mockProf.EXPECT().profileHeap().AnyTimes().Return([]byte("h"), nil)
+	mockProf.EXPECT().profileGoroutine().AnyTimes().Return([]byte("g"), nil)
+
+	var mu sync.Mutex
+	comments := map[string]string{}
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
+			mu.Lock()
+			defer mu.Unlock()
+			if _, ok := comments[info.MetricName]; !ok {
+				comments[info.MetricName] = info.Comment
+			}
+			return nil
+		})
+
+	ap := newTestAp(t, mockReporter)
+	ap.cgroupQueryer = mockCG
+	ap.runtimeQueryer = mockRT
+	ap.profiler = mockProf
+	ap.reportCooldown = 20 * time.Second // suppress repeats
+	ap.registerBuiltIn(&cpuMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&memMetric{threshold: 0.5, cg: mockCG, p: mockProf})
+	ap.registerBuiltIn(&goroutineMetric{threshold: 5, rt: mockRT, p: mockProf})
+	t.Cleanup(func() { ap.stop() })
+
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(comments) == 3
+	}, 2*time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+	cpuComment := comments["cpu"]
+	memComment := comments["mem"]
+	goComment := comments["goroutine"]
+
+	if !strings.Contains(cpuComment, ":rotating_light:") || !strings.Contains(cpuComment, "> threshold") {
+		t.Errorf("cpu trigger comment expected :rotating_light: > threshold form, got %q", cpuComment)
+	}
+	if !strings.Contains(memComment, ":mag:") || !strings.Contains(memComment, "— threshold") {
+		t.Errorf("mem cascade comment expected :mag: — threshold form, got %q", memComment)
+	}
+	if !strings.Contains(goComment, ":mag:") || !strings.Contains(goComment, "— threshold") {
+		t.Errorf("goroutine cascade comment expected :mag: — threshold form, got %q", goComment)
+	}
+}
+
 // -------------------------------------------------------------------
 // User metric: trigger, independence, interval, nil reader, defaults
 // -------------------------------------------------------------------

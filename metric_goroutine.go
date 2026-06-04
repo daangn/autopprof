@@ -14,7 +14,13 @@ const (
 	MetricNameGoroutine = "goroutine"
 
 	goroutineProfileFilenameFmt = "pprof.%s.%s.goroutine.%s.pprof"
-	goroutineCommentFmt         = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
+	// goroutineTriggerCommentFmt is used when the goroutine count
+	// itself breaches its threshold. The `>` then describes reality.
+	goroutineTriggerCommentFmt = ":rotating_light:[GOROUTINE] count (*%d*) > threshold (*%d*)"
+	// goroutineCascadeCommentFmt is used for cascade companions
+	// captured alongside another metric's trigger but below their
+	// own threshold.
+	goroutineCascadeCommentFmt = ":mag:[GOROUTINE] count (*%d*) — threshold (*%d*)"
 )
 
 // goroutineMetric keeps its threshold as int to mirror
@@ -35,9 +41,13 @@ func (m *goroutineMetric) Query() (float64, error) {
 }
 
 func (m *goroutineMetric) Collect(value float64) (CollectResult, error) {
+	commentFmt := goroutineCascadeCommentFmt
+	if int(value) >= m.threshold {
+		commentFmt = goroutineTriggerCommentFmt
+	}
 	return collectProfile(
 		m.app, goroutineProfileFilenameFmt,
 		m.p.profileGoroutine,
-		fmt.Sprintf(goroutineCommentFmt, int(value), m.threshold),
+		fmt.Sprintf(commentFmt, int(value), m.threshold),
 	)
 }
