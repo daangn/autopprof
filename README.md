@@ -49,6 +49,7 @@ func main() {
 			&report.SlackReporterOption{
 				Token:     "YOUR_TOKEN_HERE",
 				ChannelID: "REPORT_CHANNEL_ID",
+				ThreadTTL: 10 * time.Minute, // Default: 1h. Groups this pod's reports into one thread per window; negative disables.
 			},
 		),
 	})
@@ -65,6 +66,16 @@ func main() {
 ```
 
 > You can create a custom reporter by implementing the `report.Reporter` interface.
+
+> **Thread grouping (`ThreadTTL`)** — All of a single process's reports are
+> grouped into one Slack thread per time window (default 1h) to cut the noise
+> when a pod stays over threshold or many pods share a channel. Once the window
+> elapses, the next report opens a fresh thread. Set a custom duration to change
+> the window, or a negative value to disable threading (each report becomes its
+> own top-level message). Threading posts one extra header message per window to
+> obtain a parent timestamp, since Slack's file upload API returns no timestamp
+> to thread replies on. The window is per-process (in-memory), so each pod keeps
+> its own thread.
 
 ## Custom metrics
 
