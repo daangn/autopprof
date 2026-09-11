@@ -12,8 +12,6 @@ import (
 
 type DiscordReporter struct {
 	webhookURL string
-
-	client any	
 }
 
 type DiscordReporterOption struct {
