@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/daangn/autopprof/v2/queryer"
+	"github.com/daangn/autopprof/v3/queryer"
 )
 
 const (

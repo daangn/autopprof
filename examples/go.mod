@@ -2,9 +2,9 @@ module github.com/daangn/autopprof/examples
 
 go 1.26
 
-replace github.com/daangn/autopprof/v2 => ../
+replace github.com/daangn/autopprof/v3 => ../
 
-require github.com/daangn/autopprof/v2 v2.0.0-00010101000000-000000000000
+require github.com/daangn/autopprof/v3 v3.0.0-00010101000000-000000000000
 
 require (
 	github.com/cilium/ebpf v0.22.0 // indirect

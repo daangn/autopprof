@@ -12,8 +12,8 @@ import (
 	"runtime/pprof"
 	"time"
 
-	"github.com/daangn/autopprof/v2"
-	"github.com/daangn/autopprof/v2/report"
+	"github.com/daangn/autopprof/v3"
+	"github.com/daangn/autopprof/v3/report"
 )
 
 type mm struct {
