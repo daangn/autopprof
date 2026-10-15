@@ -1,6 +1,6 @@
 module github.com/daangn/autopprof/examples
 
-go 1.19
+go 1.26
 
 replace github.com/daangn/autopprof/v2 => ../
 
@@ -17,6 +17,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
-	github.com/slack-go/slack v0.16.0 // indirect
+	github.com/slack-go/slack v0.30.1 // indirect
 	golang.org/x/sys v0.1.0 // indirect
 )
