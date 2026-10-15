@@ -1,11 +1,11 @@
 module github.com/daangn/autopprof/v2
 
-go 1.19
+go 1.26
 
 require (
 	github.com/containerd/cgroups v1.0.4
 	github.com/golang/mock v1.6.0
-	github.com/slack-go/slack v0.14.0
+	github.com/slack-go/slack v0.30.1
 )
 
 require (
