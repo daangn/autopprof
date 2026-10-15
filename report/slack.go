@@ -69,7 +69,7 @@ func (s *SlackReporter) reportProfile(ctx context.Context, r io.Reader, filename
 		reader = bytes.NewReader(data)
 	}
 
-	_, err := s.client.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+	_, err := s.client.UploadFileContext(ctx, slack.UploadFileParameters{
 		Reader:         reader,
 		Filename:       filename,
 		FileSize:       fileSize,
