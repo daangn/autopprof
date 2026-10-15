@@ -18,7 +18,7 @@ e.g. Slack).
 ## Installation
 
 ```bash
-go get -u github.com/daangn/autopprof/v2
+go get -u github.com/daangn/autopprof/v3
 ```
 
 ## Usage
@@ -34,8 +34,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/daangn/autopprof/v2"
-	"github.com/daangn/autopprof/v2/report"
+	"github.com/daangn/autopprof/v3"
+	"github.com/daangn/autopprof/v3/report"
 )
 
 func main() {
@@ -114,9 +114,9 @@ triggering one. Set `DisableCPUProf`, `DisableMemProf`, or
 `DisableGoroutineProf` to opt a built-in out — it leaves the watcher and
 the cascade in one step.
 
-## Migrating from v1 to v2
+## Migrating from v1 to v3
 
-v2 unifies CPU / Mem / Goroutine / Custom under a single `Metric` interface
+v3 unifies CPU / Mem / Goroutine / Custom under a single `Metric` interface
 and narrows the `Reporter` surface. This section lists every change a v1
 caller needs to make.
 
@@ -124,18 +124,18 @@ caller needs to make.
 
 ```diff
 - import "github.com/daangn/autopprof"
-+ import "github.com/daangn/autopprof/v2"
++ import "github.com/daangn/autopprof/v3"
 ```
 
 Update `go.mod`:
 
 ```bash
-go get github.com/daangn/autopprof/v2
+go get github.com/daangn/autopprof/v3
 ```
 
 ### 2. `Option` changes
 
-| v1 | v2 |
+| v1 | v3 |
 |---|---|
 | `ReportBoth bool` | **Removed.** Cascade is always on for enabled built-ins. |
 | `ReportAll bool`  | **Removed.** Cascade is always on for enabled built-ins. |
@@ -207,7 +207,7 @@ func (r *MyReporter) Report(ctx context.Context, reader io.Reader, info report.R
 Removed types from the `report` package: `CPUInfo`, `MemInfo`, `GoroutineInfo`,
 `CPUProfileFilenameFmt`, `HeapProfileFilenameFmt`, `GoroutineProfileFilenameFmt`.
 
-### 5. Bug fixes carried in v2
+### 5. Bug fixes carried in v3
 
 - `Option.DisableGoroutineProf` was silently ignored in v1 (the value
   wasn't assigned to the internal struct at `Start` time). It now takes
@@ -218,7 +218,7 @@ Removed types from the `report` package: `CPUInfo`, `MemInfo`, `GoroutineInfo`,
 
 ### 6. New: custom metrics
 
-v2 lets you register your own `Metric`. See the **Custom metrics** section
+v3 lets you register your own `Metric`. See the **Custom metrics** section
 above — this is the main reason to migrate.
 
 ## Benchmark

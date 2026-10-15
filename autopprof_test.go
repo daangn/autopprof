@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daangn/autopprof/v2/queryer"
-	"github.com/daangn/autopprof/v2/report"
+	"github.com/daangn/autopprof/v3/queryer"
+	"github.com/daangn/autopprof/v3/report"
 	"github.com/golang/mock/gomock"
 )
 
