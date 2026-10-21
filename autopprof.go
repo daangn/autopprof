@@ -35,6 +35,10 @@ type autoPprof struct {
 	// no mutex needed.
 	cascadedRunners map[string]*metricRunner
 
+	// hasFlightRecorder is set when this instance started the
+	// global flight recorder, so only that instance stops it.
+	hasFlightRecorder bool
+
 	// wg tracks every live watcher goroutine so Stop blocks until
 	// in-flight pprof work (CPU profiling runs up to ~10s) unwinds.
 	wg       sync.WaitGroup
@@ -120,6 +124,12 @@ func start(opt Option) error {
 			return err
 		}
 	}
+	// Start the recorder before any watcher runs, so the first Collect
+	// can already snapshot it. Nothing to unwind on failure yet.
+	if err := startFlightRecorder(opt.FlightRecorder); err != nil {
+		return err
+	}
+	ap.hasFlightRecorder = opt.FlightRecorder != nil
 	ap.registerBuiltinMetrics(opt)
 	for _, m := range opt.Metrics {
 		if err := ap.registerMetric(m); err != nil {
@@ -252,11 +262,23 @@ func newRunner(m Metric, globalInterval time.Duration) *metricRunner {
 // further reports for that metric until the cooldown has elapsed.
 // Dropping below the threshold re-arms an immediate report on the next
 // breach.
+//
+// An EventMetric additionally reports whatever arrives on Events(),
+// debounced on its own clock so the ticker's re-arm can't defeat it: a
+// bulkhead's live ratio drops right after it trips, which would
+// otherwise re-arm the event path on the very next tick.
 func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 
-	var lastReport time.Time
+	// A nil channel never becomes ready, so plain Metrics skip the
+	// events case entirely.
+	var events <-chan float64
+	if em, ok := runner.metric.(EventMetric); ok {
+		events = em.Events()
+	}
+
+	var lastReport, lastEventReport time.Time
 	for {
 		select {
 		case <-ticker.C:
@@ -283,6 +305,25 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 				}
 				lastReport = now
 			}
+		case v, ok := <-events:
+			if !ok {
+				// Closed: a closed channel is always ready, so stop
+				// selecting on it and fall back to polling only.
+				events = nil
+				continue
+			}
+			if !lastEventReport.IsZero() && time.Since(lastEventReport) < ap.reportCooldown {
+				continue
+			}
+			if err := ap.fireReport(runner, v); err != nil {
+				log.Println(fmt.Errorf(
+					"autopprof: metric %q event report failed: %w", runner.name, err,
+				))
+			}
+			// Measured from when Collect returns, not when it started:
+			// Collect can outlast the cooldown, and the event it buffered
+			// meanwhile belongs to the episode just reported.
+			lastEventReport = time.Now()
 		case <-ap.stopC:
 			return
 		}
@@ -343,10 +384,14 @@ func (ap *autoPprof) cascadeBuiltIn(triggered string) {
 
 // stop signals every watcher and blocks until they exit. wg.Wait
 // ensures Stop() doesn't return while pprof.StartCPUProfile is in
-// flight.
+// flight, and that no Collect is still snapshotting the flight
+// recorder when it is stopped.
 func (ap *autoPprof) stop() {
 	ap.stopOnce.Do(func() {
 		close(ap.stopC)
 		ap.wg.Wait()
+		if ap.hasFlightRecorder {
+			stopFlightRecorder()
+		}
 	})
 }

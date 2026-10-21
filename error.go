@@ -24,6 +24,12 @@ var (
 	ErrInvalidReportCooldown = errors.New(
 		"autopprof: report cooldown must be a non-negative duration",
 	)
+	ErrInvalidFlightRecorderMinAge = errors.New(
+		"autopprof: flight recorder min age must be a non-negative duration",
+	)
+	ErrInvalidFlightRecorderMaxBytes = errors.New(
+		"autopprof: flight recorder max bytes must be at most 256 MiB",
+	)
 	ErrNilReporter         = errors.New("autopprof: Reporter can't be nil")
 	ErrDisableAllProfiling = errors.New("autopprof: all profiling is disabled")
 
@@ -32,5 +38,11 @@ var (
 	)
 	ErrNotStarted = errors.New(
 		"autopprof: Start() must be called before Register",
+	)
+	ErrInvalidCPUProfileDuration = errors.New(
+		"autopprof: cpu profile duration must be positive",
+	)
+	ErrFlightRecorderDisabled = errors.New(
+		"autopprof: flight recorder is disabled (Option.FlightRecorder is nil or autopprof is not running)",
 	)
 )
