@@ -68,6 +68,10 @@ type Option struct {
 	// elapsed check runs once per sample, so a metric is reported at most
 	// once per watch interval, and dropping below the threshold re-arms an
 	// immediate report on the next breach. Defaults to 1m when left zero.
+	//
+	// EventMetric events are debounced by the same duration but on their
+	// own clock: ticks below the threshold do not re-arm the event path,
+	// and an event report does not delay the next ticker report.
 	ReportCooldown time.Duration
 
 	// App is embedded in built-in CPU/Mem/Goroutine filenames as the
@@ -77,6 +81,30 @@ type Option struct {
 	// Metrics are user-defined Metrics registered at Start. Additional
 	// metrics can be added later via autopprof.Register.
 	Metrics []Metric
+
+	// FlightRecorder keeps a process-wide execution trace ring buffer
+	// running so reports can include what happened *before* they fired.
+	// Read it with WriteTrace, typically from Metric.Collect. nil
+	// disables it. Only one flight recorder may run per process, so
+	// Start fails if another one is already active.
+	FlightRecorder *FlightRecorderOption
+}
+
+// FlightRecorderOption configures the runtime/trace FlightRecorder
+// that autopprof owns. Zero values fall back to the runtime defaults
+// (10s / 10 MiB as of Go 1.26).
+//
+// The window ends at whichever limit is hit first: roughly the last
+// MinAge of execution, cut short once it would exceed MaxBytes. Size
+// MaxBytes from the process's trace rate (e.g. bytes from a 10s
+// /debug/pprof/trace) times the lookback you want.
+type FlightRecorderOption struct {
+	// MinAge is how far back the window aims to reach. MaxBytes takes
+	// precedence, so under heavy tracing load the window is shorter.
+	MinAge time.Duration
+	// MaxBytes bounds the size of the trace window. It is a hint, not
+	// a hard cap on memory or snapshot size.
+	MaxBytes uint64
 }
 
 func (o Option) validate() error {
@@ -102,6 +130,9 @@ func (o Option) validate() error {
 	}
 	if o.ReportCooldown < 0 {
 		return ErrInvalidReportCooldown
+	}
+	if o.FlightRecorder != nil && o.FlightRecorder.MinAge < 0 {
+		return ErrInvalidFlightRecorderMinAge
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

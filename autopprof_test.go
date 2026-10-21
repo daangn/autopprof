@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"runtime/trace"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,6 +52,15 @@ func (f *fakeMetric) Collect(v float64) (CollectResult, error) {
 	return CollectResult{}, nil
 }
 
+// fakeEventMetric adds an Events channel to fakeMetric. Tests pair it
+// with a long interval so only events can trigger a report.
+type fakeEventMetric struct {
+	*fakeMetric
+	events chan float64
+}
+
+func (f *fakeEventMetric) Events() <-chan float64 { return f.events }
+
 // resetGlobal ensures test isolation — some tests Start() and don't
 // Stop() cleanly; others test CAS behavior that needs the slot empty.
 func resetGlobal() {
@@ -57,6 +68,26 @@ func resetGlobal() {
 	startOnce = sync.Once{}
 	startErr = nil
 	stopOnce = sync.Once{}
+	stopFlightRecorder()
+}
+
+// syncBuffer is a bytes.Buffer safe to hand to log.SetOutput while a
+// watcher goroutine may be logging.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // -------------------------------------------------------------------
@@ -113,6 +144,9 @@ func TestOption_validate(t *testing.T) {
 		{"negative ReportCooldown",
 			Option{Reporter: stub, ReportCooldown: -time.Second},
 			ErrInvalidReportCooldown},
+		{"negative FlightRecorder.MinAge",
+			Option{Reporter: stub, FlightRecorder: &FlightRecorderOption{MinAge: -time.Second}},
+			ErrInvalidFlightRecorderMinAge},
 		{"valid custom metric",
 			Option{Reporter: stub, Metrics: []Metric{validMetric}},
 			nil},
@@ -130,7 +164,7 @@ func TestOption_validate(t *testing.T) {
 // Built-in Metric: watch loop & Reporter routing
 // -------------------------------------------------------------------
 
-func newTestAp(t *testing.T, reporter report.Reporter) *autoPprof {
+func newTestAp(t testing.TB, reporter report.Reporter) *autoPprof {
 	t.Helper()
 	return &autoPprof{
 		watchInterval:   20 * time.Millisecond,
@@ -622,30 +656,382 @@ func TestRegister_stopsOnAutoPprofStop(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Query error terminates the watcher
+// Query error keeps the watcher alive
 // -------------------------------------------------------------------
 
-func TestWatchMetric_queryErrorExitsWatcher(t *testing.T) {
+// TestWatchMetric_queryErrorKeepsWatching: a transient Query error
+// used to return from the watcher, leaving the metric unwatched for the
+// life of the process. It must now survive and report the next breach.
+func TestWatchMetric_queryErrorKeepsWatching(t *testing.T) {
 	ctrl := gomock.NewController(t)
+	var reported atomic.Int32
 	mockReporter := report.NewMockReporter(ctrl)
-	// Reporter must never be called; Query errored before any fire.
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
+			reported.Add(1)
+			return nil
+		})
 
+	var calls atomic.Int32
+	flaky := &fakeMetric{nameVal: "flaky", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
+		queryFn: func() (float64, error) {
+			if calls.Add(1) <= 2 {
+				return 0, errors.New("boom")
+			}
+			return 100, nil
+		},
+		collectFn: func(float64) (CollectResult, error) {
+			return CollectResult{Reader: bytes.NewReader([]byte("x"))}, nil
+		}}
 	ap := newTestAp(t, mockReporter)
-
-	broken := &fakeMetric{nameVal: "boom", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn:   func() (float64, error) { return 0, errors.New("boom") },
-		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
-	if err := ap.registerMetric(broken); err != nil {
+	if err := ap.registerMetric(flaky); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { ap.stop() })
 
-	// Give the ticker one or two fires then Stop should return promptly,
-	// proving the watcher exited on its own.
-	time.Sleep(60 * time.Millisecond)
+	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
+}
+
+// TestWatchMetric_queryErrorLogsOnTransition: a Query that keeps
+// failing must not log on every tick — once on failure, once on
+// recovery.
+func TestWatchMetric_queryErrorLogsOnTransition(t *testing.T) {
+	var logs syncBuffer
+	prev := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	ctrl := gomock.NewController(t)
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	var calls atomic.Int32
+	m := &fakeMetric{nameVal: "noisy", thresholdVal: 1, intervalVal: 10 * time.Millisecond,
+		queryFn: func() (float64, error) {
+			if calls.Add(1) <= 5 {
+				return 0, errors.New("boom")
+			}
+			return 0, nil // recovered, below threshold
+		}}
+	ap := newTestAp(t, mockReporter)
+	if err := ap.registerMetric(m); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return m.queryCalls.Load() >= 8 }, time.Second)
 	ap.stop()
-	if n := broken.queryCalls.Load(); n < 1 {
-		t.Errorf("expected at least one Query call, got %d", n)
+
+	out := logs.String()
+	if got := strings.Count(out, `"noisy" query failed`); got != 1 {
+		t.Errorf("query failed logged %d times, want 1:\n%s", got, out)
+	}
+	if got := strings.Count(out, `"noisy" query recovered`); got != 1 {
+		t.Errorf("query recovered logged %d times, want 1:\n%s", got, out)
+	}
+}
+
+// -------------------------------------------------------------------
+// EventMetric: immediate trigger, independent cooldown
+// -------------------------------------------------------------------
+
+func newFakeEventMetric(name string, collect func(float64) (CollectResult, error)) *fakeEventMetric {
+	return &fakeEventMetric{
+		fakeMetric: &fakeMetric{
+			nameVal:      name,
+			thresholdVal: 1,
+			intervalVal:  time.Hour, // the ticker never fires within a test
+			collectFn:    collect,
+		},
+		events: make(chan float64, 1),
+	}
+}
+
+func readerCollect(float64) (CollectResult, error) {
+	return CollectResult{Reader: bytes.NewReader([]byte("x"))}, nil
+}
+
+func TestEventMetric_firesWithoutTick(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	var gotInfo report.ReportInfo
+	var reported atomic.Int32
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, info report.ReportInfo) error {
+			gotInfo = info
+			reported.Add(1)
+			return nil
+		})
+
+	em := newFakeEventMetric("evt", readerCollect)
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = 10 * time.Second
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	em.events <- 0.42
+	waitFor(t, func() bool { return reported.Load() == 1 }, 500*time.Millisecond)
+
+	if gotInfo.MetricName != "evt" || gotInfo.Value != 0.42 {
+		t.Errorf("unexpected info: %+v", gotInfo)
+	}
+	if n := em.queryCalls.Load(); n != 0 {
+		t.Errorf("event path must not Query, got %d calls", n)
+	}
+}
+
+// TestEventMetric_tickerReArmDoesNotResetEventCooldown: the bulkhead's
+// live ratio drops right after a trip, so below-threshold ticks follow
+// every event. If they re-armed the event path, cooldown would be moot.
+func TestEventMetric_tickerReArmDoesNotResetEventCooldown(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	var reported atomic.Int32
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
+			reported.Add(1)
+			return nil
+		})
+
+	em := newFakeEventMetric("rearm-evt", readerCollect)
+	em.intervalVal = 10 * time.Millisecond
+	em.queryFn = func() (float64, error) { return 0, nil } // always below → ticker re-arms
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = 10 * time.Second
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	em.events <- 1
+	waitFor(t, func() bool { return reported.Load() == 1 }, 500*time.Millisecond)
+	ticks := em.queryCalls.Load()
+	waitFor(t, func() bool { return em.queryCalls.Load() >= ticks+3 }, time.Second)
+
+	em.events <- 1
+	time.Sleep(100 * time.Millisecond)
+	if got := em.collectCalls.Load(); got != 1 {
+		t.Errorf("second event within cooldown collected: collectCalls=%d, want 1", got)
+	}
+}
+
+// TestEventMetric_eventReportDoesNotSuppressTicker: the reverse
+// direction — an event report leaves the ticker's own debounce alone.
+func TestEventMetric_eventReportDoesNotSuppressTicker(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	var reported atomic.Int32
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
+		AnyTimes().
+		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
+			reported.Add(1)
+			return nil
+		})
+
+	var over atomic.Bool
+	em := newFakeEventMetric("both", readerCollect)
+	em.intervalVal = 10 * time.Millisecond
+	em.queryFn = func() (float64, error) {
+		if over.Load() {
+			return 100, nil
+		}
+		return 0, nil
+	}
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = 10 * time.Second
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	em.events <- 1
+	waitFor(t, func() bool { return reported.Load() == 1 }, 500*time.Millisecond)
+	over.Store(true)
+	waitFor(t, func() bool { return reported.Load() == 2 }, 500*time.Millisecond)
+}
+
+// TestEventMetric_eventsDuringCollectDropped: Collect can run for 30s+.
+// Events arriving meanwhile collapse into the 1-slot buffer and must
+// then be swallowed by the cooldown instead of firing a second bundle.
+func TestEventMetric_eventsDuringCollectDropped(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+	entered := make(chan struct{}, 4)
+	release := make(chan struct{})
+	em := newFakeEventMetric("slow", func(v float64) (CollectResult, error) {
+		entered <- struct{}{}
+		<-release
+		return readerCollect(v)
+	})
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = 10 * time.Second
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	em.events <- 1
+	select {
+	case <-entered:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Collect never started")
+	}
+	// The sender's non-blocking send: the first lands in the buffer,
+	// the rest are dropped at the source.
+	for i := 0; i < 5; i++ {
+		select {
+		case em.events <- 2:
+		default:
+		}
+	}
+	close(release)
+	time.Sleep(100 * time.Millisecond)
+
+	if got := em.collectCalls.Load(); got != 1 {
+		t.Errorf("collectCalls=%d, want 1 (queued event must hit cooldown)", got)
+	}
+}
+
+// TestEventMetric_cooldownStartsAfterCollect: when Collect outlasts the
+// cooldown, the event buffered during it must still be dropped — the
+// cooldown runs from when Collect returns. A fresh event after the
+// cooldown fires again.
+func TestEventMetric_cooldownStartsAfterCollect(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+
+	const cooldown = 50 * time.Millisecond
+	entered := make(chan struct{}, 4)
+	var slow atomic.Bool
+	slow.Store(true)
+	em := newFakeEventMetric("long", func(v float64) (CollectResult, error) {
+		entered <- struct{}{}
+		if slow.Load() {
+			time.Sleep(4 * cooldown) // Collect outlasts the cooldown
+		}
+		return readerCollect(v)
+	})
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = cooldown
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	em.events <- 1
+	<-entered
+	em.events <- 2 // buffered while Collect runs
+	waitFor(t, func() bool { return len(em.events) == 0 }, time.Second)
+	time.Sleep(cooldown / 5)
+	if got := em.collectCalls.Load(); got != 1 {
+		t.Fatalf("buffered event fired after a long Collect: collectCalls=%d, want 1", got)
+	}
+
+	slow.Store(false)
+	time.Sleep(2 * cooldown)
+	em.events <- 3
+	waitFor(t, func() bool { return em.collectCalls.Load() == 2 }, time.Second)
+}
+
+// TestEventMetric_closedChannel: a closed channel is always ready; the
+// watcher must stop selecting on it rather than spin reporting zeros.
+func TestEventMetric_closedChannel(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockReporter := report.NewMockReporter(ctrl)
+	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	em := newFakeEventMetric("closed", readerCollect)
+	em.intervalVal = 10 * time.Millisecond
+	em.queryFn = func() (float64, error) { return 0, nil }
+	close(em.events)
+	ap := newTestAp(t, mockReporter)
+	ap.reportCooldown = 0
+	if err := ap.registerMetric(em); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ap.stop() })
+
+	waitFor(t, func() bool { return em.queryCalls.Load() >= 3 }, time.Second)
+	if got := em.collectCalls.Load(); got != 0 {
+		t.Errorf("closed channel produced %d collects, want 0", got)
+	}
+}
+
+// -------------------------------------------------------------------
+// Start / Stop own the flight recorder
+// -------------------------------------------------------------------
+
+func startOnlyCustom(t *testing.T, fr *FlightRecorderOption) error {
+	t.Helper()
+	stub := report.NewMockReporter(gomock.NewController(t))
+	stub.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	return Start(Option{
+		DisableCPUProf:       true,
+		DisableMemProf:       true,
+		DisableGoroutineProf: true,
+		Reporter:             stub,
+		Metrics:              []Metric{&fakeMetric{nameVal: "idle", thresholdVal: 1, intervalVal: time.Hour}},
+		FlightRecorder:       fr,
+	})
+}
+
+func TestStart_flightRecorderLifecycle(t *testing.T) {
+	resetGlobal()
+	t.Cleanup(resetGlobal)
+
+	if err := startOnlyCustom(t, &FlightRecorderOption{MaxBytes: 1 << 20}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	spawnSome()
+
+	var buf bytes.Buffer
+	if _, err := WriteTrace(&buf); err != nil {
+		t.Fatalf("WriteTrace after Start: %v", err)
+	}
+	if h := buf.Bytes()[:16]; !traceHeader.Match(h) {
+		t.Errorf("trace header = %q", h)
+	}
+
+	Stop()
+	if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+		t.Errorf("WriteTrace after Stop = %v, want ErrFlightRecorderDisabled", err)
+	}
+}
+
+func TestStart_withoutFlightRecorder(t *testing.T) {
+	resetGlobal()
+	t.Cleanup(resetGlobal)
+
+	if err := startOnlyCustom(t, nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+		t.Errorf("WriteTrace = %v, want ErrFlightRecorderDisabled", err)
+	}
+}
+
+func TestStart_flightRecorderFailFast(t *testing.T) {
+	resetGlobal()
+	t.Cleanup(resetGlobal)
+
+	other := trace.NewFlightRecorder(trace.FlightRecorderConfig{})
+	if err := other.Start(); err != nil {
+		t.Fatalf("start other recorder: %v", err)
+	}
+	t.Cleanup(other.Stop)
+
+	err := startOnlyCustom(t, &FlightRecorderOption{})
+	if err == nil || !strings.Contains(err.Error(), "flight recorder") {
+		t.Fatalf("Start = %v, want flight recorder start error", err)
+	}
+	if globalAp != nil {
+		t.Error("globalAp set despite failed Start")
 	}
 }
 

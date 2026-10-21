@@ -40,6 +40,20 @@ type Metric interface {
 	Collect(value float64) (CollectResult, error)
 }
 
+// EventMetric is a Metric that can also trigger a report on its own,
+// without waiting for the next Query tick.
+//
+// Events is read once, when the metric's watcher starts. A value
+// received on the channel is reported as-is (no threshold check),
+// debounced by Option.ReportCooldown independently of the ticker path.
+// Closing the channel turns the metric back into a plain polled Metric.
+type EventMetric interface {
+	Metric
+	// Events delivers values to report. autopprof reads it from the
+	// metric's watcher goroutine; senders should not block.
+	Events() <-chan float64
+}
+
 // NewMetric is a convenience constructor. Nil query/collect surface
 // ErrInvalidMetric at call time instead of panicking.
 func NewMetric(

@@ -114,6 +114,81 @@ triggering one. Set `DisableCPUProf`, `DisableMemProf`, or
 `DisableGoroutineProf` to opt a built-in out — it leaves the watcher and
 the cascade in one step.
 
+## Event-triggered metrics
+
+Polling is too late for signals that are *events*, such as a bulkhead or
+circuit breaker tripping: the trip sheds load immediately, so by the next
+tick there is nothing left to profile. Implement `EventMetric` to report
+the moment it happens:
+
+```go
+type Bulkhead struct {
+    // ...
+    events chan float64 // make(chan float64, 1)
+}
+
+func (b *Bulkhead) Events() <-chan float64 { return b.events }
+
+// Called on the request path when the bulkhead trips.
+func (b *Bulkhead) onTrip(ratio float64) {
+    select {
+    case b.events <- ratio:
+    default: // a report is already pending; never block the request
+    }
+}
+```
+
+- A received value is passed to `Collect` on the metric's watcher
+  goroutine as-is (no threshold check). `Query` keeps running on its
+  ticker as before.
+- Events are debounced by `ReportCooldown` on their own clock: ticks
+  below the threshold don't re-arm them, and an event report doesn't
+  delay the next ticker report.
+- Events that arrive while `Collect` is running collapse into the
+  channel buffer and are then dropped by the cooldown.
+- Closing the channel turns the metric back into a plain polled `Metric`.
+
+## Flight recorder
+
+`Option.FlightRecorder` keeps a
+[`runtime/trace.FlightRecorder`](https://pkg.go.dev/runtime/trace#FlightRecorder)
+running for the life of the process, so a `Collect` can attach the
+execution trace of the seconds *before* it fired:
+
+```go
+err := autopprof.Start(autopprof.Option{
+    // ...
+    FlightRecorder: &autopprof.FlightRecorderOption{
+        MinAge:   time.Minute,
+        MaxBytes: 64 << 20,
+    },
+})
+
+func (b *Bulkhead) Collect(v float64) (autopprof.CollectResult, error) {
+    var buf bytes.Buffer
+    // Snapshot first: anything slower (e.g. a goroutine dump) lets the
+    // ring keep overwriting the moments before the trip.
+    if _, err := autopprof.WriteTrace(&buf); err != nil {
+        return autopprof.CollectResult{}, err
+    }
+    return autopprof.CollectResult{Reader: &buf, Filename: "bulkhead.trace.out"}, nil
+}
+```
+
+- Only one flight recorder may run per process, so `Start` fails if
+  another one is already active. Use `WriteTrace` instead of starting
+  your own.
+- Concurrent `WriteTrace` calls are serialized; the stdlib would reject
+  the overlapping ones. It returns `ErrFlightRecorderDisabled` when the
+  option is nil, before `Start`, after `Stop`, and on non-Linux
+  platforms.
+- The window ends at whichever limit is hit first: `MinAge` of history,
+  or `MaxBytes`. Size `MaxBytes` as your process's trace rate (bytes of a
+  10 s `/debug/pprof/trace` ÷ 10) × the lookback you want. The
+  [benchmark](#benchmark) shows how rate and CPU cost grow with
+  goroutine activity.
+- Open a snapshot with `go tool trace`.
+
 ## Migrating from v1 to v3
 
 v3 unifies CPU / Mem / Goroutine / Custom under a single `Metric` interface
@@ -223,28 +298,88 @@ above — this is the main reason to migrate.
 
 ## Benchmark
 
-Benchmark the overhead of watching the CPU and memory utilization. The overhead is very
-small, so we don't have to worry about the performance degradation.
+`./benchmark.sh` runs the benchmarks in a Linux container with the Go
+version from `go.mod`, limited to `--cpus=1.5 -m=1000m`. Extra arguments
+go to `go test`:
 
-> You can run the benchmark test with this command.
->
-> ```bash
-> ./benchmark.sh
-> ```
->
+```bash
+./benchmark.sh                                   # everything, -benchtime=10s
+./benchmark.sh -bench FlightRecorder -count 6 -benchtime 2s
+```
 
-```
-BenchmarkLightJob-12                                	98078731	       134.5 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLightJobWithWatchCPUUsage-12               	92799849	       133.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkLightJobWithWatchMemUsage-12               	96778594	       128.3 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHeavyJob-12                                	  105848	    106606 ns/op	       0 B/op	       0 allocs/op
-BenchmarkHeavyJobWithWatchCPUUsage-12               	  113047	    112734 ns/op	       1 B/op	       0 allocs/op
-BenchmarkHeavyJobWithWatchMemUsage-12               	  101102	    133426 ns/op	       1 B/op	       0 allocs/op
-BenchmarkLightAsyncJob-12                           	  399696	     29953 ns/op	    7040 B/op	     352 allocs/op
-BenchmarkLightAsyncJobWithWatchGoroutineCount-12    	  347266	     34259 ns/op	    7040 B/op	     352 allocs/op
-BenchmarkHeavyAsyncJob-12                           	     452	  26689023 ns/op	 6002064 B/op	  300097 allocs/op
-BenchmarkHeavyAsyncJobWithWatchGoroutineCount-12    	     414	  27350318 ns/op	 5973015 B/op	  298647 allocs/op
-```
+The results below are Go 1.26.10 on linux/arm64 (Docker Desktop on an
+Apple Silicon Mac), `-count=6 -benchtime=2s`, shown as benchstat medians
+± 95% CI. The `-2` suffix is GOMAXPROCS: since Go 1.25 the runtime
+derives it from the cgroup CPU limit (1.5 → 2) instead of the host core
+count.
+
+### Watching
+
+Sampling the cgroup or the goroutine count every 5s doesn't measurably
+change a workload. The ~29 ns on `LightJob` is the benchmark loop's own
+`select` on the ticker, paid every iteration and not by autopprof.
+
+| Job | bare | + watch CPU | + watch Mem | + watch Goroutine |
+|---|---:|---:|---:|---:|
+| `LightJob` (`fib(10)`) | 118.5 ns | 147.6 ns | 146.7 ns | |
+| `HeavyJob` (`fib(24)`) | 99.97 µs | 99.61 µs | 99.12 µs | |
+| `LightAsyncJob` (`fibAsync(10)`) | 20.18 µs | | | 20.29 µs |
+| `HeavyAsyncJob` (`fibAsync(24)`) | 17.56 ms | | | 17.71 ms |
+
+### Flight recorder
+
+The cost of `Option.FlightRecorder` (`MinAge: 1m, MaxBytes: 64 MiB`)
+depends on **scheduler events, not CPU**. Each goroutine lifecycle
+(create, start, block, unblock, exit) costs about 115–145 ns and 20–40
+trace bytes. Code that rarely spawns or parks goroutines pays nothing.
+
+`BenchmarkFlightRecorderOverhead` (`benchstat -col /fr`):
+
+| Job | Goroutines/op | off | on | Δ |
+|---|---:|---:|---:|---:|
+| `Heavy`: `fib(24)`, CPU only | 0 | 99.26 µs | 99.77 µs | ~ (p=0.485) |
+| `FanOut40`: 40 goroutines × `fib(18)`, like an errgroup handler | 40 | 165.6 µs | 169.6 µs | ~ (+2.4%, p=0.093) |
+| `LightAsync`: `fibAsync(10)` | 88 | 22.95 µs | 33.07 µs | **+44%** |
+| `HeavyAsync`: `fibAsync(24)` | 75k | 17.20 ms | 27.89 ms | **+62%** |
+
+`fibAsync` does nothing but spawn and wait, so it is the worst case. A
+real server sits between `FanOut40` and `LightAsync`, depending on how
+much work each goroutine does between parks. Estimate your own cost as
+roughly *goroutine lifecycles per second × 130 ns*, and confirm it in
+production.
+
+`BenchmarkTraceRate` gives the trace bytes produced, which determines how
+far back the window reaches: **window ≈ min(MinAge, MaxBytes ÷ rate)**.
+
+| Job | trace-B/op | trace rate | 64 MiB lasts |
+|---|---:|---:|---:|
+| `Heavy` | 1.4 B | 0.013 MiB/s | MinAge-bound |
+| `FanOut40` | 793 B | 4.6 MiB/s | ~14 s |
+| `LightAsync` | 3.4 KiB | 87 MiB/s | ~0.7 s |
+| `HeavyAsync` | 2.9 MiB | 86 MiB/s | ~0.7 s |
+
+`BenchmarkWriteTrace` takes a snapshot of a full ring while a `FanOut40`
+loop keeps writing to it. `sink=discard` is the freeze: the flush and the
+ring copy, after which the window can no longer be overwritten.
+`sink=buffer` adds copying the bytes into a `bytes.Buffer`.
+
+| MaxBytes | snapshot | freeze (`sink=discard`) | to memory (`sink=buffer`) |
+|---|---:|---:|---:|
+| 4 MiB | 4.0 MiB | 114 µs | 301 µs |
+| 16 MiB | 16.1 MiB | 205 µs | 1.03 ms |
+| 64 MiB | 63.7 MiB | 262 µs | 2.86 ms |
+
+### Event trigger
+
+| Benchmark | Result |
+|---|---:|
+| `BenchmarkEventTrigger`: `Events()` send → `Collect` running | 270 ns |
+| `BenchmarkEventNotify`: non-blocking send on a full 1-slot channel, `RunParallel` | 1.3 ns, 0 allocs |
+
+A polled `Query` waits on average half the watch interval (2.5 s at the
+default 5 s) before `Collect` starts. An `EventMetric` starts `Collect`
+in under a microsecond, and with `WriteTrace` first the window is frozen
+about 0.3 ms after the event.
 
 ## License
 
