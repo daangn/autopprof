@@ -2,7 +2,7 @@
 # Runs the benchmarks in a Linux container (autopprof is Linux-only),
 # using the Go version from go.mod. Extra args are passed to `go test`
 # and override the defaults, e.g.:
-#   ./benchmark.sh -bench 'FlightRecorder|WriteTrace|Event' -count 6 -benchtime 2s
+#   ./benchmark.sh -bench 'FlightRecorder|SnapshotTrace|Event' -count 6 -benchtime 2s
 set -euo pipefail
 
 GO_VERSION=$(awk '/^go /{print $2}' go.mod)

@@ -168,17 +168,20 @@ func (b *Bulkhead) Collect(v float64) (autopprof.CollectResult, error) {
     var buf bytes.Buffer
     // Snapshot first: anything slower (e.g. a goroutine dump) lets the
     // ring keep overwriting the moments before the trip.
-    if _, err := autopprof.WriteTrace(&buf); err != nil {
+    if _, err := autopprof.SnapshotTrace(&buf); err != nil {
         return autopprof.CollectResult{}, err
     }
     return autopprof.CollectResult{Reader: &buf, Filename: "bulkhead.trace.out"}, nil
 }
 ```
 
+- `SnapshotTrace` works from any `Collect`, polled or event-triggered.
+  It pairs best with an `EventMetric`, whose `Collect` starts within
+  microseconds of the event.
 - Only one flight recorder may run per process, so `Start` fails if
-  another one is already active. Use `WriteTrace` instead of starting
+  another one is already active. Use `SnapshotTrace` instead of starting
   your own.
-- Concurrent `WriteTrace` calls are serialized; the stdlib would reject
+- Concurrent `SnapshotTrace` calls are serialized; the stdlib would reject
   the overlapping ones. It returns `ErrFlightRecorderDisabled` when the
   option is nil, before `Start`, after `Stop`, and on non-Linux
   platforms.
@@ -187,7 +190,34 @@ func (b *Bulkhead) Collect(v float64) (autopprof.CollectResult, error) {
   10 s `/debug/pprof/trace` ÷ 10) × the lookback you want. The
   [benchmark](#benchmark) shows how rate and CPU cost grow with
   goroutine activity.
+- `MaxBytes` is capped at 256 MiB: the ring stays in memory for the
+  life of the process, and each snapshot is held in memory and uploaded.
+  `ReportTimeout` defaults to 15s so that a snapshot of a few tens of MiB
+  can finish uploading.
 - Open a snapshot with `go tool trace`.
+
+## CPU profiling from a custom metric
+
+`ProfileCPU` records a CPU profile into any `io.Writer`, for a `Collect`
+that wants one next to its own data:
+
+```go
+func (b *Bulkhead) Collect(v float64) (autopprof.CollectResult, error) {
+    var buf bytes.Buffer
+    if err := autopprof.ProfileCPU(&buf, 10*time.Second); err != nil {
+        return autopprof.CollectResult{}, err
+    }
+    return autopprof.CollectResult{Reader: &buf, Filename: "bulkhead.cpu.pprof"}, nil
+}
+```
+
+The Go runtime runs only one CPU profile at a time, and
+`pprof.StartCPUProfile` fails instead of waiting. Calling it directly
+from `Collect` therefore breaks whenever the built-in CPU watcher is
+profiling. `ProfileCPU` waits for its turn behind autopprof's own CPU
+profiles. It still fails if code outside autopprof, such as
+`net/http/pprof`, holds the profiler. Heap and goroutine profiles have
+no such limit; call `pprof.Lookup(...).WriteTo` directly.
 
 ## Migrating from v1 to v3
 
@@ -358,7 +388,7 @@ far back the window reaches: **window ≈ min(MinAge, MaxBytes ÷ rate)**.
 | `LightAsync` | 3.4 KiB | 87 MiB/s | ~0.7 s |
 | `HeavyAsync` | 2.9 MiB | 86 MiB/s | ~0.7 s |
 
-`BenchmarkWriteTrace` takes a snapshot of a full ring while a `FanOut40`
+`BenchmarkSnapshotTrace` takes a snapshot of a full ring while a `FanOut40`
 loop keeps writing to it. `sink=discard` is the freeze: the flush and the
 ring copy, after which the window can no longer be overwritten.
 `sink=buffer` adds copying the bytes into a `bytes.Buffer`.
@@ -378,7 +408,7 @@ ring copy, after which the window can no longer be overwritten.
 
 A polled `Query` waits on average half the watch interval (2.5 s at the
 default 5 s) before `Collect` starts. An `EventMetric` starts `Collect`
-in under a microsecond, and with `WriteTrace` first the window is frozen
+in under a microsecond, and with `SnapshotTrace` first the window is frozen
 about 0.3 ms after the event.
 
 ## License

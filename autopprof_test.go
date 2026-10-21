@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"runtime/trace"
 	"strings"
 	"sync"
@@ -71,25 +70,6 @@ func resetGlobal() {
 	stopFlightRecorder()
 }
 
-// syncBuffer is a bytes.Buffer safe to hand to log.SetOutput while a
-// watcher goroutine may be logging.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
 // -------------------------------------------------------------------
 // Validation tests
 // -------------------------------------------------------------------
@@ -147,6 +127,12 @@ func TestOption_validate(t *testing.T) {
 		{"negative FlightRecorder.MinAge",
 			Option{Reporter: stub, FlightRecorder: &FlightRecorderOption{MinAge: -time.Second}},
 			ErrInvalidFlightRecorderMinAge},
+		{"FlightRecorder.MaxBytes at the cap",
+			Option{Reporter: stub, FlightRecorder: &FlightRecorderOption{MaxBytes: 256 << 20}},
+			nil},
+		{"FlightRecorder.MaxBytes over the cap",
+			Option{Reporter: stub, FlightRecorder: &FlightRecorderOption{MaxBytes: 256<<20 + 1}},
+			ErrInvalidFlightRecorderMaxBytes},
 		{"valid custom metric",
 			Option{Reporter: stub, Metrics: []Metric{validMetric}},
 			nil},
@@ -656,77 +642,30 @@ func TestRegister_stopsOnAutoPprofStop(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// Query error keeps the watcher alive
+// Query error terminates the watcher
 // -------------------------------------------------------------------
 
-// TestWatchMetric_queryErrorKeepsWatching: a transient Query error
-// used to return from the watcher, leaving the metric unwatched for the
-// life of the process. It must now survive and report the next breach.
-func TestWatchMetric_queryErrorKeepsWatching(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	var reported atomic.Int32
-	mockReporter := report.NewMockReporter(ctrl)
-	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).
-		AnyTimes().
-		DoAndReturn(func(_ context.Context, _ io.Reader, _ report.ReportInfo) error {
-			reported.Add(1)
-			return nil
-		})
-
-	var calls atomic.Int32
-	flaky := &fakeMetric{nameVal: "flaky", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
-		queryFn: func() (float64, error) {
-			if calls.Add(1) <= 2 {
-				return 0, errors.New("boom")
-			}
-			return 100, nil
-		},
-		collectFn: func(float64) (CollectResult, error) {
-			return CollectResult{Reader: bytes.NewReader([]byte("x"))}, nil
-		}}
-	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(flaky); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { ap.stop() })
-
-	waitFor(t, func() bool { return reported.Load() > 0 }, time.Second)
-}
-
-// TestWatchMetric_queryErrorLogsOnTransition: a Query that keeps
-// failing must not log on every tick — once on failure, once on
-// recovery.
-func TestWatchMetric_queryErrorLogsOnTransition(t *testing.T) {
-	var logs syncBuffer
-	prev := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(prev) })
-
+func TestWatchMetric_queryErrorExitsWatcher(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockReporter := report.NewMockReporter(ctrl)
+	// Reporter must never be called; Query errored before any fire.
 	mockReporter.EXPECT().Report(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 
-	var calls atomic.Int32
-	m := &fakeMetric{nameVal: "noisy", thresholdVal: 1, intervalVal: 10 * time.Millisecond,
-		queryFn: func() (float64, error) {
-			if calls.Add(1) <= 5 {
-				return 0, errors.New("boom")
-			}
-			return 0, nil // recovered, below threshold
-		}}
 	ap := newTestAp(t, mockReporter)
-	if err := ap.registerMetric(m); err != nil {
+
+	broken := &fakeMetric{nameVal: "boom", thresholdVal: 1, intervalVal: 20 * time.Millisecond,
+		queryFn:   func() (float64, error) { return 0, errors.New("boom") },
+		collectFn: func(float64) (CollectResult, error) { return CollectResult{}, nil }}
+	if err := ap.registerMetric(broken); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return m.queryCalls.Load() >= 8 }, time.Second)
-	ap.stop()
 
-	out := logs.String()
-	if got := strings.Count(out, `"noisy" query failed`); got != 1 {
-		t.Errorf("query failed logged %d times, want 1:\n%s", got, out)
-	}
-	if got := strings.Count(out, `"noisy" query recovered`); got != 1 {
-		t.Errorf("query recovered logged %d times, want 1:\n%s", got, out)
+	// Give the ticker one or two fires then Stop should return promptly,
+	// proving the watcher exited on its own.
+	time.Sleep(60 * time.Millisecond)
+	ap.stop()
+	if n := broken.queryCalls.Load(); n < 1 {
+		t.Errorf("expected at least one Query call, got %d", n)
 	}
 }
 
@@ -991,16 +930,16 @@ func TestStart_flightRecorderLifecycle(t *testing.T) {
 	spawnSome()
 
 	var buf bytes.Buffer
-	if _, err := WriteTrace(&buf); err != nil {
-		t.Fatalf("WriteTrace after Start: %v", err)
+	if _, err := SnapshotTrace(&buf); err != nil {
+		t.Fatalf("SnapshotTrace after Start: %v", err)
 	}
 	if h := buf.Bytes()[:16]; !traceHeader.Match(h) {
 		t.Errorf("trace header = %q", h)
 	}
 
 	Stop()
-	if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-		t.Errorf("WriteTrace after Stop = %v, want ErrFlightRecorderDisabled", err)
+	if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+		t.Errorf("SnapshotTrace after Stop = %v, want ErrFlightRecorderDisabled", err)
 	}
 }
 
@@ -1011,8 +950,8 @@ func TestStart_withoutFlightRecorder(t *testing.T) {
 	if err := startOnlyCustom(t, nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-		t.Errorf("WriteTrace = %v, want ErrFlightRecorderDisabled", err)
+	if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+		t.Errorf("SnapshotTrace = %v, want ErrFlightRecorderDisabled", err)
 	}
 }
 

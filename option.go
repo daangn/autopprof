@@ -14,7 +14,12 @@ const (
 	defaultWatchInterval        = 5 * time.Second
 	defaultCPUProfilingDuration = 10 * time.Second
 	defaultReportCooldown       = 1 * time.Minute
-	defaultReportTimeout        = 5 * time.Second
+	defaultReportTimeout        = 15 * time.Second
+
+	// maxFlightRecorderMaxBytes caps FlightRecorderOption.MaxBytes. The
+	// ring stays resident for the life of the process, and every
+	// snapshot is held in memory and uploaded by the Reporter.
+	maxFlightRecorderMaxBytes = 256 << 20
 )
 
 // Option is the configuration for autopprof.
@@ -52,7 +57,8 @@ type Option struct {
 	Reporter report.Reporter
 
 	// ReportTimeout is the per-call timeout passed to Reporter.Report
-	// as the ctx deadline. Defaults to 5s when left zero.
+	// as the ctx deadline. Defaults to 15s when left zero, enough to
+	// upload a flight recorder snapshot of tens of MiB.
 	ReportTimeout time.Duration
 
 	// WatchInterval is how often each metric is sampled against its
@@ -84,7 +90,7 @@ type Option struct {
 
 	// FlightRecorder keeps a process-wide execution trace ring buffer
 	// running so reports can include what happened *before* they fired.
-	// Read it with WriteTrace, typically from Metric.Collect. nil
+	// Read it with SnapshotTrace, typically from Metric.Collect. nil
 	// disables it. Only one flight recorder may run per process, so
 	// Start fails if another one is already active.
 	FlightRecorder *FlightRecorderOption
@@ -102,8 +108,8 @@ type FlightRecorderOption struct {
 	// MinAge is how far back the window aims to reach. MaxBytes takes
 	// precedence, so under heavy tracing load the window is shorter.
 	MinAge time.Duration
-	// MaxBytes bounds the size of the trace window. It is a hint, not
-	// a hard cap on memory or snapshot size.
+	// MaxBytes bounds the size of the trace window, up to 256 MiB. It
+	// is a hint, not a hard cap on memory or snapshot size.
 	MaxBytes uint64
 }
 
@@ -131,8 +137,13 @@ func (o Option) validate() error {
 	if o.ReportCooldown < 0 {
 		return ErrInvalidReportCooldown
 	}
-	if o.FlightRecorder != nil && o.FlightRecorder.MinAge < 0 {
-		return ErrInvalidFlightRecorderMinAge
+	if o.FlightRecorder != nil {
+		if o.FlightRecorder.MinAge < 0 {
+			return ErrInvalidFlightRecorderMinAge
+		}
+		if o.FlightRecorder.MaxBytes > maxFlightRecorderMaxBytes {
+			return ErrInvalidFlightRecorderMaxBytes
+		}
 	}
 	if o.Reporter == nil {
 		return ErrNilReporter

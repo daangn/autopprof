@@ -122,12 +122,12 @@ func backgroundLoad() (stop func()) {
 	}
 }
 
-// BenchmarkWriteTrace measures a snapshot of a full ring under load —
+// BenchmarkSnapshotTrace measures a snapshot of a full ring under load —
 // the first thing a Collect does, ahead of the stop-the-world goroutine
 // dump. sink=discard isolates the freeze (flush + ring copy; the window
 // can't be overwritten after it), sink=buffer adds copying the bytes
 // out, as a Collect building an in-memory bundle would.
-func BenchmarkWriteTrace(b *testing.B) {
+func BenchmarkSnapshotTrace(b *testing.B) {
 	for _, mib := range []uint64{4, 16, 64} {
 		for _, sink := range []string{"discard", "buffer"} {
 			b.Run(fmt.Sprintf("maxbytes=%dMiB/sink=%s", mib, sink), func(b *testing.B) {
@@ -149,7 +149,7 @@ func BenchmarkWriteTrace(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					buf.Reset()
-					n, err := WriteTrace(w)
+					n, err := SnapshotTrace(w)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -167,7 +167,7 @@ func fillFlightRecorder(b *testing.B, maxBytes uint64) {
 	b.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		n, err := WriteTrace(io.Discard)
+		n, err := SnapshotTrace(io.Discard)
 		if err != nil {
 			b.Fatal(err)
 		}

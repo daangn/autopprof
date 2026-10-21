@@ -35,9 +35,9 @@ type autoPprof struct {
 	// no mutex needed.
 	cascadedRunners map[string]*metricRunner
 
-	// ownsFlightRecorder is set when this instance started the global
-	// flight recorder, so only that instance stops it.
-	ownsFlightRecorder bool
+	// hasFlightRecorder is set when this instance started the
+	// global flight recorder, so only that instance stops it.
+	hasFlightRecorder bool
 
 	// wg tracks every live watcher goroutine so Stop blocks until
 	// in-flight pprof work (CPU profiling runs up to ~10s) unwinds.
@@ -129,7 +129,7 @@ func start(opt Option) error {
 	if err := startFlightRecorder(opt.FlightRecorder); err != nil {
 		return err
 	}
-	ap.ownsFlightRecorder = opt.FlightRecorder != nil
+	ap.hasFlightRecorder = opt.FlightRecorder != nil
 	ap.registerBuiltinMetrics(opt)
 	for _, m := range opt.Metrics {
 		if err := ap.registerMetric(m); err != nil {
@@ -278,29 +278,16 @@ func (ap *autoPprof) watchMetric(runner *metricRunner, isBuiltin bool) {
 		events = em.Events()
 	}
 
-	var (
-		lastReport      time.Time
-		lastEventReport time.Time
-		// queryFailing keeps a persistently failing Query from logging
-		// on every tick; only transitions are logged.
-		queryFailing bool
-	)
+	var lastReport, lastEventReport time.Time
 	for {
 		select {
 		case <-ticker.C:
 			value, err := runner.metric.Query()
 			if err != nil {
-				if !queryFailing {
-					log.Println(fmt.Errorf(
-						"autopprof: metric %q query failed: %w", runner.name, err,
-					))
-					queryFailing = true
-				}
-				continue
-			}
-			if queryFailing {
-				log.Printf("autopprof: metric %q query recovered", runner.name)
-				queryFailing = false
+				log.Println(fmt.Errorf(
+					"autopprof: metric %q query failed: %w", runner.name, err,
+				))
+				return
 			}
 			if value < runner.threshold {
 				lastReport = time.Time{}
@@ -403,7 +390,7 @@ func (ap *autoPprof) stop() {
 	ap.stopOnce.Do(func() {
 		close(ap.stopC)
 		ap.wg.Wait()
-		if ap.ownsFlightRecorder {
+		if ap.hasFlightRecorder {
 			stopFlightRecorder()
 		}
 	})

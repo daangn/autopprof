@@ -38,49 +38,49 @@ func spawnSome() {
 	wg.Wait()
 }
 
-func TestWriteTrace_enabled(t *testing.T) {
+func TestSnapshotTrace_enabled(t *testing.T) {
 	startTestFlightRecorder(t, smallFlightRecorder)
 	spawnSome()
 
 	var buf bytes.Buffer
-	n, err := WriteTrace(&buf)
+	n, err := SnapshotTrace(&buf)
 	if err != nil {
-		t.Fatalf("WriteTrace: %v", err)
+		t.Fatalf("SnapshotTrace: %v", err)
 	}
 	if n != int64(buf.Len()) || n <= 16 {
-		t.Fatalf("WriteTrace n=%d len=%d, want n == len > 16", n, buf.Len())
+		t.Fatalf("SnapshotTrace n=%d len=%d, want n == len > 16", n, buf.Len())
 	}
 	if h := buf.Bytes()[:16]; !traceHeader.Match(h) {
 		t.Errorf("trace header = %q, want go 1.N trace", h)
 	}
 }
 
-func TestWriteTrace_disabled(t *testing.T) {
+func TestSnapshotTrace_disabled(t *testing.T) {
 	t.Run("never started", func(t *testing.T) {
-		if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-			t.Errorf("WriteTrace = %v, want ErrFlightRecorderDisabled", err)
+		if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+			t.Errorf("SnapshotTrace = %v, want ErrFlightRecorderDisabled", err)
 		}
 	})
 	t.Run("nil option is a no-op", func(t *testing.T) {
 		if err := startFlightRecorder(nil); err != nil {
 			t.Fatalf("startFlightRecorder(nil) = %v", err)
 		}
-		if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-			t.Errorf("WriteTrace = %v, want ErrFlightRecorderDisabled", err)
+		if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+			t.Errorf("SnapshotTrace = %v, want ErrFlightRecorderDisabled", err)
 		}
 	})
 	t.Run("after stop", func(t *testing.T) {
 		startTestFlightRecorder(t, smallFlightRecorder)
 		stopFlightRecorder()
-		if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-			t.Errorf("WriteTrace = %v, want ErrFlightRecorderDisabled", err)
+		if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+			t.Errorf("SnapshotTrace = %v, want ErrFlightRecorderDisabled", err)
 		}
 	})
 }
 
-// TestWriteTrace_concurrentSerialized: the stdlib WriteTo fails fast
-// with "already in progress" on overlap; WriteTrace must queue instead.
-func TestWriteTrace_concurrentSerialized(t *testing.T) {
+// TestSnapshotTrace_concurrentSerialized: the stdlib WriteTo fails fast
+// with "already in progress" on overlap; SnapshotTrace must queue instead.
+func TestSnapshotTrace_concurrentSerialized(t *testing.T) {
 	startTestFlightRecorder(t, smallFlightRecorder)
 	spawnSome()
 
@@ -91,7 +91,7 @@ func TestWriteTrace_concurrentSerialized(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := WriteTrace(io.Discard)
+			_, err := SnapshotTrace(io.Discard)
 			errs <- err
 		}()
 	}
@@ -99,15 +99,15 @@ func TestWriteTrace_concurrentSerialized(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		if err != nil {
-			t.Errorf("concurrent WriteTrace: %v", err)
+			t.Errorf("concurrent SnapshotTrace: %v", err)
 		}
 	}
 }
 
-// TestWriteTrace_racesStop: writers overlapping stopFlightRecorder see
+// TestSnapshotTrace_racesStop: writers overlapping stopFlightRecorder see
 // either a full snapshot or ErrFlightRecorderDisabled — never a stdlib
 // error from a recorder stopped mid-write. Meaningful under -race.
-func TestWriteTrace_racesStop(t *testing.T) {
+func TestSnapshotTrace_racesStop(t *testing.T) {
 	startTestFlightRecorder(t, smallFlightRecorder)
 	spawnSome()
 
@@ -118,7 +118,7 @@ func TestWriteTrace_racesStop(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := WriteTrace(io.Discard)
+			_, err := SnapshotTrace(io.Discard)
 			errs <- err
 		}()
 	}
@@ -127,7 +127,7 @@ func TestWriteTrace_racesStop(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		if err != nil && !errors.Is(err, ErrFlightRecorderDisabled) {
-			t.Errorf("WriteTrace racing stop: %v", err)
+			t.Errorf("SnapshotTrace racing stop: %v", err)
 		}
 	}
 }
@@ -146,7 +146,7 @@ func TestStartFlightRecorder_failFast(t *testing.T) {
 		stopFlightRecorder()
 		t.Fatal("startFlightRecorder succeeded while another recorder was active")
 	}
-	if _, err := WriteTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
-		t.Errorf("WriteTrace after failed start = %v, want ErrFlightRecorderDisabled", err)
+	if _, err := SnapshotTrace(io.Discard); !errors.Is(err, ErrFlightRecorderDisabled) {
+		t.Errorf("SnapshotTrace after failed start = %v, want ErrFlightRecorderDisabled", err)
 	}
 }

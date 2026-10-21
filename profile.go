@@ -3,6 +3,7 @@ package autopprof
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"runtime/pprof"
 	"sync"
 	"time"
@@ -19,17 +20,18 @@ type profiler interface {
 	profileGoroutine() ([]byte, error)
 }
 
+// cpuProfileMu serializes every CPU profile autopprof takes, built-in
+// or through ProfileCPU. pprof.StartCPUProfile is a process-wide
+// singleton — a concurrent call fails immediately instead of waiting,
+// and the cascade can land on CPU at the same tick as its own watcher.
+// It is package-level for the same reason the profiler is.
+var cpuProfileMu sync.Mutex
+
 type defaultProfiler struct {
 	// cpuProfilingDuration is the duration to wait until collect
 	// the enough cpu profiling data.
 	// Default: 10s.
 	cpuProfilingDuration time.Duration
-
-	// cpuMu serializes profileCPU calls. pprof.StartCPUProfile is a
-	// process-wide singleton — concurrent invocations would make the
-	// second one fail immediately. With ReportAll a cascade path can
-	// land on CPU at the same tick as its own watcher, so we gate it.
-	cpuMu sync.Mutex
 }
 
 func newDefaultProfiler(duration time.Duration) *defaultProfiler {
@@ -39,23 +41,33 @@ func newDefaultProfiler(duration time.Duration) *defaultProfiler {
 }
 
 func (p *defaultProfiler) profileCPU() ([]byte, error) {
-	p.cpuMu.Lock()
-	defer p.cpuMu.Unlock()
-
-	var (
-		buf bytes.Buffer
-		w   = bufio.NewWriter(&buf)
-	)
-	if err := pprof.StartCPUProfile(w); err != nil {
-		return nil, err
-	}
-	<-time.After(p.cpuProfilingDuration)
-	pprof.StopCPUProfile()
-
-	if err := w.Flush(); err != nil {
+	var buf bytes.Buffer
+	if err := ProfileCPU(&buf, p.cpuProfilingDuration); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// ProfileCPU records a CPU profile for duration d and writes it to w
+// in pprof format. Calls wait for each other and for autopprof's
+// built-in CPU profiling, so it is safe to call from Metric.Collect
+// while the CPU watcher is profiling: it blocks until its turn instead
+// of failing. It still fails if code outside autopprof (e.g.
+// net/http/pprof) is holding the CPU profiler.
+func ProfileCPU(w io.Writer, d time.Duration) error {
+	if d <= 0 {
+		return ErrInvalidCPUProfileDuration
+	}
+	cpuProfileMu.Lock()
+	defer cpuProfileMu.Unlock()
+
+	bw := bufio.NewWriter(w)
+	if err := pprof.StartCPUProfile(bw); err != nil {
+		return err
+	}
+	<-time.After(d)
+	pprof.StopCPUProfile()
+	return bw.Flush()
 }
 
 func (p *defaultProfiler) profileHeap() ([]byte, error) {

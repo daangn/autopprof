@@ -8,7 +8,7 @@ import (
 )
 
 // flightRecorder is the process-wide recorder started by Start. It
-// lives outside autoPprof so WriteTrace never reads globalAp, which
+// lives outside autoPprof so SnapshotTrace never reads globalAp, which
 // Stop clears without a lock.
 //
 // traceMu guards flightRecorder and is held across WriteTo: the stdlib
@@ -46,11 +46,12 @@ func stopFlightRecorder() {
 	flightRecorder = nil
 }
 
-// WriteTrace writes the current flight recorder window to w as a Go
-// execution trace (readable with `go tool trace`). Concurrent calls are
-// serialized. Returns ErrFlightRecorderDisabled when
+// SnapshotTrace freezes the flight recorder's current window and writes
+// it to w as a Go execution trace (readable with `go tool trace`). It
+// works from any Metric.Collect, polled or event-triggered. Concurrent
+// calls are serialized. Returns ErrFlightRecorderDisabled when
 // Option.FlightRecorder was nil or autopprof is not running.
-func WriteTrace(w io.Writer) (int64, error) {
+func SnapshotTrace(w io.Writer) (int64, error) {
 	traceMu.Lock()
 	defer traceMu.Unlock()
 	if flightRecorder == nil {
